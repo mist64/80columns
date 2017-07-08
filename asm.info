@@ -1,0 +1,16 @@
+GLOBAL {
+    OUTPUTNAME      "80columns.s";
+    INPUTNAME       "80columns-c800.bin";
+    STARTADDR       $c800;
+    PAGELENGTH      0;                  # No paging
+    CPU             "6502";
+};
+
+RANGE { START $C8D9; END $C958; TYPE AddrTable; };
+RANGE { START $CAFD; END $CB2E; TYPE WordTable; };
+RANGE { START $CB66; END $CB97; TYPE WordTable; };
+RANGE { START $CC64; END $CC6F; TYPE ByteTable; };
+RANGE { START $CEE0; END $CFFF; TYPE ByteTable; };
+RANGE { START $D000; END $D7FF; TYPE ByteTable; };
+
+LABEL { NAME "charset";   ADDR  $D000;   SIZE $800;    };
