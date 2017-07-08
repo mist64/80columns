@@ -1,21 +1,14 @@
-; da65 V2.15
-; Created:	  2017-07-08 11:59:41
-; Input file: 80columns-c800.bin
-; Page:	     1
+; 80COLUMNS.PRG
+; http://mikenaberezny.com/hardware/projects/c64-soft80/
 
+COLOR  = $0286
+CINV   = $0314
+IBASIN = $0324
+IBSOUT = $0326
+USRCMD = $032E
 
-	.setcpu "6502"
-
-L032E := $032E
-LA000 := $A000
-LE5B4 := $E5B4
-LE684 := $E684
-LEA61 := $EA61
-LF173 := $F173
-LF1D5 := $F1D5
-LFFEA := $FFEA
 	jsr LC806
-	jmp (LA000)
+	jmp ($A000) ; BASIC warm start
 
 LC806:	jsr LC964
 	lda #$00
@@ -23,40 +16,41 @@ LC806:	jsr LC964
 	sta $D8
 	jsr LCA1C
 	lda #$3B
-	sta charset+17
+	sta $D011
 	lda #$68
-	sta charset+24
+	sta $D018
 	lda #$90
 	sta $DD00
 	jsr LC9FC
 	sei
-	lda #$31
-	sta $0314
-	lda #$CE
-	sta $0315
-	lda #$E6
-	sta $0324
-	lda #$CC
-	sta $0325
-	lda #$55
-	sta $0326
-	lda #$C8
-	sta $0327
+	lda #<LCE31
+	sta CINV
+	lda #>LCE31
+	sta CINV + 1
+	lda #<LCCE6
+	sta IBASIN
+	lda #>LCCE6
+	sta IBASIN + 1
+	lda #<LC855
+	sta IBSOUT
+	lda #>LC855
+	sta IBSOUT + 1
 	lda #$00
 	sta LCFF2
-	lda $0286
-	sta charset+32
-	sta charset+33
+	lda COLOR
+	sta $D020
+	sta $D021
 	cli
 	rts
 
 	nop
 	nop
-	pha
+
+LC855:	pha
 	lda $9A
 	cmp #$03
 	beq LC85F
-	jmp LF1D5
+	jmp $F1D5 ; part of BASIN
 
 LC85F:	pla
 	pha
@@ -80,11 +74,11 @@ LC874:	tax
 	and #$60
 	beq LC893
 	txa
-	jsr LE684
+	jsr $E684 ; if open quote toggle cursor quote flag
 	jsr LCC48
 	clc
 	adc $C7
-	ldx $0286
+	ldx COLOR
 	jsr LCE84
 	jsr LC9DA
 	lda $D8
@@ -112,7 +106,7 @@ LC8B0:	txa
 	sec
 	sbc #$40
 LC8B6:	ora #$80
-	ldx $0286
+	ldx COLOR
 	jsr LCE84
 	jsr LC9DA
 	rts
@@ -124,10 +118,10 @@ LC8C2:	txa
 LC8C8:	asl a
 	tax
 	lda LC8D9,x
-	sta L032E
+	sta USRCMD
 	lda LC8D9+1,x
-	sta $032F
-	jmp (L032E)
+	sta USRCMD + 1
+	jmp (USRCMD)
 
 LC8D9:	.addr LCAD7
 	.addr LCAD7
@@ -211,9 +205,9 @@ LC96A:	lda #$00
 	jsr LCA17
 	jmp LC981
 
-LC978:	lda charset+24
+LC978:	lda $D018
 	ora #$02
-	sta charset+24
+	sta $D018
 	rts
 
 LC981:	inc $D6
@@ -243,7 +237,7 @@ LC9A7:	lda $D3
 
 LC9AE:	pha
 LC9AF:	ldy $D3
-	ldx $0286
+	ldx COLOR
 	lda ($D1),y
 	dec $D3
 	jsr LCE84
@@ -254,7 +248,7 @@ LC9AF:	ldy $D3
 	bne LC9AF
 	dec $D3
 	lda #$20
-	ldx $0286
+	ldx COLOR
 	jsr LCE84
 	pla
 	sta $D3
@@ -284,9 +278,9 @@ LC9F4:	lda #$08
 
 LC9F9:	jmp LC96A
 
-LC9FC:	lda charset+24
+LC9FC:	lda $D018
 	and #$FD
-	sta charset+24
+	sta $D018
 	rts
 
 LCA05:	lda #$00
@@ -318,7 +312,7 @@ LCA31:	sta ($D1),y
 	bpl LCA31
 	jsr LCAEB
 	ldy #$27
-	lda $0286
+	lda COLOR
 LCA3E:	sta ($F3),y
 	dey
 	bpl LCA3E
@@ -352,14 +346,14 @@ LCA75:	ldy $D3
 	cpy LCFF0
 	beq LCA8A
 	dey
-	ldx $0286
+	ldx COLOR
 	lda ($D1),y
 	jsr LCE84
 	dec $D3
 	jmp LCA75
 
 LCA8A:	lda #$20
-	ldx $0286
+	ldx COLOR
 	jsr LCE84
 	inc $D8
 LCA94:	rts
@@ -409,11 +403,11 @@ LCAD8:	asl a
 	asl a
 	asl a
 	asl a
-	sta $0286
+	sta COLOR
 	lda LCFEF
 	and #$0F
-	ora $0286
-	sta $0286
+	ora COLOR
+	sta COLOR
 	rts
 
 LCAEB:	lda $D6
@@ -657,7 +651,7 @@ LCCDD:	lda $D3
 	sta ($F3),y
 	rts
 
-	lda $99
+LCCE6:	lda $99
 	bne LCCF5
 	lda $D3
 	sta $CA
@@ -672,7 +666,7 @@ LCCF5:	cmp #$03
 	sta $C8
 	jmp LCD68
 
-LCD02:	jmp LF173
+LCD02:	jmp $F173 ; part of BASIN
 
 LCD05:	jsr LC874
 LCD08:	lda $C6
@@ -688,7 +682,7 @@ LCD08:	lda $C6
 	ldx $0287
 	lda $CE
 	jsr LCE84
-LCD23:	jsr LE5B4
+LCD23:	jsr $E5B4 ; input from the keyboard buffer
 	cmp #$83
 	bne LCD3A
 	ldx #$09
@@ -743,7 +737,7 @@ LCD80:	bcc LCD86
 LCD86:	bvs LCD8A
 	ora #$40
 LCD8A:	inc $D3
-	jsr LE684
+	jsr $E684 ; if open quote toggle cursor quote flag
 	cpy $C8
 	bne LCDAA
 LCD93:	lda #$00
@@ -765,8 +759,8 @@ LCDAA:	sta $D7
 	jmp LCECC
 
 	nop
-LCDB4:	jsr LFFEA
-LCDB7:	lda charset+33
+LCDB4:	jsr $FFEA ; increment real time clock
+LCDB7:	lda $D021
 	sta LCFEF
 	lda $01
 	pha
@@ -790,7 +784,7 @@ LCDB7:	lda charset+33
 	tay
 	lda ($F3),y
 	sta $0287
-	ldx $0286
+	ldx COLOR
 	lda $CE
 LCDED:	eor #$80
 	jsr LCE84
@@ -813,22 +807,22 @@ LCE0B:	lda ($F3),y
 	bpl LCE0B
 	dec $D6
 	bpl LCE06
-	lda $0286
+	lda COLOR
 	and #$F0
 	ora LCFF4
-	sta $0286
+	sta COLOR
 	lda $0287
 	and #$F0
 	ora LCFF4
 	jmp LCED6
 
-	jmp LCDB4
+LCE31:	jmp LCDB4
 
 	jmp LCDB7
 
 LCE37:	pla
 	sta $01
-	lda charset+24
+	lda $D018
 	and #$02
 	cmp LCFF5
 	beq LCE81
@@ -862,7 +856,7 @@ LCE75:	pla
 	sta $D3
 	jsr LCB54
 	jsr LCAEB
-LCE81:	jmp LEA61
+LCE81:	jmp $EA61
 
 LCE84:	php
 	sei
