@@ -1,42 +1,90 @@
+;
 ; 80COLUMNS.PRG
-; http://mikenaberezny.com/hardware/projects/c64-soft80/
+;
+; Original author unknown, reverse-engineered by Michael Steil
+;
 
-COLOR  = $0286
+; KERNAL defines
+R6510  = $01
+DFLTN  = $99   ; Default Input Device (0)
+DFLTO  = $9A   ; Default Output (CMD) Device (3)
+NDX    = $C6   ; No. of Chars. in Keyboard Buffer (Queue)
+RVS    = $C7   ; Flag: Print Reverse Chars. -1=Yes, 0=No Used
+LXSP   = $C9   ; Cursor X-Y Pos. at Start of INPUT
+INDX   = $C8   ; Pointer: End of Logical Line for INPUT
+BLNSW  = $CC   ; Cursor Blink enable: 0 = Flash Cursor
+GDBLN  = $CE   ; Character Under Cursor
+BLNON  = $CF   ; Flag: Last Cursor Blink On/Off
+BLNCT  = $CD   ; Timer: Countdown to Toggle Cursor
+CRSW   = $D0   ; Flag: INPUT or GET from Keyboard
+PNT    = $D1   ; Pointer: Current Screen Line Address
+PNTR   = $D3   ; Cursor Column on Current Line
+QTSW   = $D4   ; Flag: Editor in Quote Mode, $00 = NO
+LNMX   = $D5   ; Physical Screen Line Length
+TBLX   = $D6   ; Current Cursor Physical Line Number
+DATA   = $D7   ; Temp Data Area
+INSRT  = $D8   ; Flag: Insert Mode, >0 = # INSTs
+USER   = $F3   ; Pointer: Current Screen Color RAM loc.
+KEYD   = $0277 ; Keyboard Buffer Queue (FIFO)
+COLOR  = $0286 ; Current Character Color Code
+GDCOL  = $0287 ; Background Color Under Cursor
+SHFLAG = $028D ; Flag: Keyb'rd SHIFT Key/CTRL Key/C= Key
+MODE   = $0291 ; Flag: $00=Disable SHIFT Keys, $80 = Enable SHIFT Keys
 CINV   = $0314
 IBASIN = $0324
 IBSOUT = $0326
 USRCMD = $032E
 
-	jsr LC806
+; new zero page defines
+bitmap_ptr  = $DD
+charset_ptr = $DF
+tmp_ptr     = $E1
+
+; addresses
+VICSCN = $C000 ; NEW Video Matrix: 25 Lines X 80 Columns
+VICCOL = $D800 ; new color RAM is in RAM at the same address
+BITMAP = $E000
+
+; constants
+COLUMNS = 80
+LINES   = 25
+
+.import charset
+
+.segment "CODE"
+
+start:
+	jsr setup
 	jmp ($A000) ; BASIC warm start
 
-LC806:	jsr LC964
-	lda #$00
-	sta $D4
-	sta $D8
-	jsr LCA1C
-	lda #$3B
+setup:
+	jsr MODE_enable ; allow switching charsets
+	lda #0
+	sta QTSW
+	sta INSRT ; disable quote and insert mode
+	jsr cmd_clr ; clear screen
+	lda #$3B ; bitmap mode
 	sta $D011
 	lda #$68
 	sta $D018
-	lda #$90
+	lda #$90 ; VIC bank $C000-$FFFF
 	sta $DD00
-	jsr LC9FC
+	jsr cmd_graphics ; upper case
 	sei
-	lda #<LCE31
+	lda #<_new_cinv
 	sta CINV
-	lda #>LCE31
+	lda #>_new_cinv
 	sta CINV + 1
-	lda #<LCCE6
+	lda #<new_basin
 	sta IBASIN
-	lda #>LCCE6
+	lda #>new_basin
 	sta IBASIN + 1
-	lda #<LC855
+	lda #<new_bsout
 	sta IBSOUT
-	lda #>LC855
+	lda #>new_bsout
 	sta IBSOUT + 1
-	lda #$00
-	sta LCFF2
+	lda #0
+	sta unused
 	lda COLOR
 	sta $D020
 	sta $D021
@@ -46,21 +94,21 @@ LC806:	jsr LC964
 	nop
 	nop
 
-LC855:	pha
-	lda $9A
-	cmp #$03
-	beq LC85F
-	jmp $F1D5 ; part of BASIN
-
-LC85F:	pla
+new_bsout:
 	pha
-	sta $D7
+	lda DFLTO
+	cmp #3
+	beq :+
+	jmp $F1D5 ; original non-screen BSOUT
+:	pla
+	pha
+	sta DATA
 	txa
 	pha
 	tya
 	pha
-	lda $D7
-	jsr LC874
+	lda DATA
+	jsr bsout_core
 	pla
 	tay
 	pla
@@ -70,1153 +118,895 @@ LC85F:	pla
 	cli
 	rts
 
-LC874:	tax
+bsout_core:
+	tax
 	and #$60
-	beq LC893
+	beq @2
 	txa
 	jsr $E684 ; if open quote toggle cursor quote flag
-	jsr LCC48
+	jsr petscii_to_screencode
 	clc
-	adc $C7
+	adc RVS
 	ldx COLOR
-	jsr LCE84
-	jsr LC9DA
-	lda $D8
-	beq LC892
-	dec $D8
-LC892:	rts
-
-LC893:	cpx #$0D
-	beq LC8C2
-	cpx #$8D
-	beq LC8C2
-	lda $D8
-	beq LC8A8
-	cpx #$94
-	beq LC8C2
-	dec $D8
-	jmp LC8B0
-
-LC8A8:	cpx #$14
-	beq LC8C2
-	lda $D4
-	beq LC8C2
-LC8B0:	txa
-	bpl LC8B6
+	jsr _draw_char_with_col
+	jsr move_csr_right
+	lda INSRT
+	beq @1
+	dec INSRT
+@1:	rts
+; special character
+@2:	cpx #$0D ; CR
+	beq @6
+	cpx #$8D ; LF
+	beq @6
+	lda INSRT
+	beq @3
+	cpx #$94 ; INSERT
+	beq @6
+	dec INSRT
+	jmp @4
+@3:	cpx #$14 ; DEL
+	beq @6
+	lda QTSW
+	beq @6
+; quote or insert mode
+@4:	txa
+	bpl @5
 	sec
 	sbc #$40
-LC8B6:	ora #$80
+@5:	ora #$80
 	ldx COLOR
-	jsr LCE84
-	jsr LC9DA
+	jsr _draw_char_with_col
+	jsr move_csr_right
 	rts
-
-LC8C2:	txa
-	bpl LC8C8
+; interpret special character
+@6:	txa
+	bpl @7
 	sec
-	sbc #$E0
-LC8C8:	asl a
+	sbc #$E0 ; fold $80-$9F -> $20-$1F
+@7:	asl a
 	tax
-	lda LC8D9,x
+	lda code_table,x
 	sta USRCMD
-	lda LC8D9+1,x
+	lda code_table + 1,x
 	sta USRCMD + 1
 	jmp (USRCMD)
 
-LC8D9:	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LC959
-	.addr LCAD7
-	.addr LCAD7
-	.addr LC95E
-	.addr LC964
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LC96A
-	.addr LC978
-	.addr LCAD7
-	.addr LCAD7
-	.addr LC981
-	.addr LC995
-	.addr LC99A
-	.addr LC9A7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LC9D5
-	.addr LC9DA
-	.addr LC9EA
-	.addr LC9EF
-	.addr LCAD7
-	.addr LC9F4
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LCAD7
-	.addr LC9F9
-	.addr LC9FC
-	.addr LCAD7
-	.addr LCA05
-	.addr LCA0A
-	.addr LCA17
-	.addr LCA1C
-	.addr LCA64
-	.addr LCA95
-	.addr LCA9A
-	.addr LCA9F
-	.addr LCAA4
-	.addr LCAA9
-	.addr LCAAE
-	.addr LCAB3
-	.addr LCAB8
-	.addr LCABD
-	.addr LCACD
-	.addr LCAD2
-LC959:	lda #$01
-	jmp LCAD8
+code_table:
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr set_col_white   ; $05: WHITE
+	.addr rts0
+	.addr rts0
+	.addr MODE_disable    ; $08: SHIFT DISABLE
+	.addr MODE_enable     ; $09: SHIFT ENABLE
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr cmd_cr          ; $0D: CR
+	.addr cmd_text        ; $0E: TEXT MODE
+	.addr rts0
+	.addr rts0
+	.addr move_csr_down   ; $11: CURSOR DOWN
+	.addr set_rvs_on      ; $12: REVERSE ON
+	.addr cmd_home        ; $13: HOME
+	.addr cmd_del         ; $14: DEL
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr set_col_red     ; $1C: RED
+	.addr move_csr_right  ; $1D: CURSOR RIGHT
+	.addr set_col_green   ; $1E: GREEN
+	.addr set_col_blue    ; $1F: BLUE
+	.addr rts0
+	.addr set_col_orange  ; $81: ORANGE
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr rts0
+	.addr cmd_lf          ; $8D: LF
+	.addr cmd_graphics    ; $8E: GRAPHICS
+	.addr rts0
+	.addr set_col_black   ; $90: BLACK
+	.addr move_csr_up     ; $91: CURSOR UP
+	.addr set_rvs_off     ; $92: REVERSE OFF
+	.addr cmd_clr         ; $93: CLR
+	.addr cmd_inst        ; $94: INSERT
+	.addr set_col_brown   ; $95: BROWN
+	.addr set_col_ltred   ; $96: LIGHT RED
+	.addr set_col_dkgray  ; $97: DARK GRAY
+	.addr set_col_gray    ; $98: MIDDLE GRAY
+	.addr set_col_ltgreen ; $99: LIGHT GREEN
+	.addr set_col_ltblue  ; $9A: LIGHT BLUE
+	.addr set_col_ltgray  ; $9B: LIGHT GRAY
+	.addr set_col_purple  ; $9C: PURPLE
+	.addr move_csr_left   ; $9D: CURSOR LEFT
+	.addr set_col_yellow  ; $9E: YELLOW
+	.addr set_col_cyan    ; $9F: CYAN
 
-LC95E:	lda #$80
-	sta $0291
+set_col_white:
+	lda #1
+	jmp set_col
+
+MODE_disable:
+	lda #$80
+	sta MODE
 	rts
 
-LC964:	lda #$00
-	sta $0291
+MODE_enable:
+	lda #0
+	sta MODE
 	rts
 
-LC96A:	lda #$00
-	sta $D3
-	sta $D8
-	sta $D4
-	jsr LCA17
-	jmp LC981
+cmd_cr:
+	lda #0
+	sta PNTR
+	sta INSRT
+	sta QTSW
+	jsr set_rvs_off
+	jmp move_csr_down
 
-LC978:	lda $D018
-	ora #$02
+cmd_text:
+	lda $D018
+	ora #2
 	sta $D018
 	rts
 
-LC981:	inc $D6
-	lda $D6
-	cmp #$19
-	bne LC98E
-	dec $D6
-	jsr LCEBB
-LC98E:	jsr LCB54
-	jsr LCAEB
+move_csr_down:
+	inc TBLX
+	lda TBLX
+	cmp #LINES
+	bne :+
+	dec TBLX
+	jsr _scroll_up
+:	jsr calc_pnt
+	jsr calc_user
 	rts
 
-LC995:	lda #$80
-	sta $C7
+set_rvs_on:
+	lda #$80
+	sta RVS
 	rts
 
-LC99A:	lda #$00
-	sta $D3
-	sta $D6
-	jsr LCB54
-	jsr LCAEB
+cmd_home:
+	lda #0
+	sta PNTR
+	sta TBLX
+	jsr calc_pnt
+	jsr calc_user
 	rts
 
-LC9A7:	lda $D3
-	bne LC9AE
-	jmp LCABD
-
-LC9AE:	pha
-LC9AF:	ldy $D3
+cmd_del:
+	lda PNTR
+	bne @1
+	jmp move_csr_left
+@1:	pha
+@2:	ldy PNTR
 	ldx COLOR
-	lda ($D1),y
-	dec $D3
-	jsr LCE84
-	inc $D3
-	inc $D3
-	lda $D3
-	cmp #$50
-	bne LC9AF
-	dec $D3
-	lda #$20
+	lda (PNT),y
+	dec PNTR
+	jsr _draw_char_with_col
+	inc PNTR
+	inc PNTR
+	lda PNTR
+	cmp #COLUMNS
+	bne @2
+	dec PNTR
+	lda #' '
 	ldx COLOR
-	jsr LCE84
+	jsr _draw_char_with_col
 	pla
-	sta $D3
-	dec $D3
+	sta PNTR
+	dec PNTR
 	rts
 
-LC9D5:	lda #$02
-	jmp LCAD8
+set_col_red:
+	lda #2
+	jmp set_col
 
-LC9DA:	inc $D3
-	lda $D3
-	cmp #$50
-	bne LC9E9
-	lda #$00
-	sta $D3
-	jsr LC981
-LC9E9:	rts
+move_csr_right:
+	inc PNTR
+	lda PNTR
+	cmp #COLUMNS
+	bne :+
+	lda #0
+	sta PNTR
+	jsr move_csr_down
+:	rts
 
-LC9EA:	lda #$05
-	jmp LCAD8
+set_col_green:
+	lda #5
+	jmp set_col
 
-LC9EF:	lda #$06
-	jmp LCAD8
+set_col_blue:
+	lda #6
+	jmp set_col
 
-LC9F4:	lda #$08
-	jmp LCAD8
+set_col_orange:
+	lda #8
+	jmp set_col
 
-LC9F9:	jmp LC96A
+cmd_lf:
+	jmp cmd_cr
 
-LC9FC:	lda $D018
-	and #$FD
+cmd_graphics:
+	lda $D018
+	and #<~2
 	sta $D018
 	rts
 
-LCA05:	lda #$00
-	jmp LCAD8
+set_col_black:
+	lda #0
+	jmp set_col
 
-LCA0A:	lda $D6
-	beq LCA10
-	dec $D6
-LCA10:	jsr LCB54
-	jsr LCAEB
+move_csr_up:
+	lda TBLX
+	beq :+
+	dec TBLX
+:	jsr calc_pnt
+	jsr calc_user
 	rts
 
-LCA17:	lda #$00
-	sta $C7
+set_rvs_off:
+	lda #0
+	sta RVS
 	rts
 
-LCA1C:	lda #$18
-	sta $D6
-LCA20:	jsr LCE97
-	dec $D6
-	bpl LCA20
-	jmp LC99A
+cmd_clr:
+	lda #LINES - 1
+	sta TBLX
+:	jsr _clr_curline
+	dec TBLX
+	bpl :-
+	jmp cmd_home
 
-LCA2A:	jsr LCB54
-	ldy #$4F
-	lda #$20
-LCA31:	sta ($D1),y
+clr_curline:
+	jsr calc_pnt
+	ldy #COLUMNS - 1
+	lda #' '
+:	sta (PNT),y
 	dey
-	bpl LCA31
-	jsr LCAEB
-	ldy #$27
+	bpl :-
+	jsr calc_user
+	ldy #40 - 1
 	lda COLOR
-LCA3E:	sta ($F3),y
+:	sta (USER),y
 	dey
-	bpl LCA3E
-	lda #$28
-	sta $D3
-	jsr LCB2F
-	ldy #$A0
-	lda #$00
-LCA4E:	dey
-	sta ($DD),y
-	bne LCA4E
-	lda #$00
-	sta $D3
-	jsr LCB2F
-	ldy #$A0
-	lda #$00
-LCA5E:	dey
-	sta ($DD),y
-	bne LCA5E
+	bpl :-
+	lda #40
+	sta PNTR
+	jsr calc_bitmap_ptr
+	ldy #160
+	lda #0
+:	dey
+	sta (bitmap_ptr),y
+	bne :-
+	lda #0
+	sta PNTR
+	jsr calc_bitmap_ptr
+	ldy #160
+	lda #0
+:	dey
+	sta (bitmap_ptr),y
+	bne :-
 	rts
 
-LCA64:	ldy #$4F
-	lda ($D1),y
-	cmp #$20
-	bne LCA94
-	lda $D3
-	sta LCFF0
-	lda #$4F
-	sta $D3
-LCA75:	ldy $D3
-	cpy LCFF0
-	beq LCA8A
+; XXX behavioral difference: will do nothing if there is
+; XXX a non-space at the very right
+cmd_inst:
+	ldy #COLUMNS - 1
+	lda (PNT),y
+	cmp #' '
+	bne @3
+	lda PNTR
+	sta pntr2
+	lda #COLUMNS - 1
+	sta PNTR
+@1:	ldy PNTR
+	cpy pntr2
+	beq @2
 	dey
 	ldx COLOR
-	lda ($D1),y
-	jsr LCE84
-	dec $D3
-	jmp LCA75
-
-LCA8A:	lda #$20
+	lda (PNT),y
+	jsr _draw_char_with_col
+	dec PNTR
+	jmp @1
+@2:	lda #' '
 	ldx COLOR
-	jsr LCE84
-	inc $D8
-LCA94:	rts
+	jsr _draw_char_with_col
+	inc INSRT
+@3:	rts
 
-LCA95:	lda #$09
-	jmp LCAD8
+set_col_brown:
+	lda #9
+	jmp set_col
 
-LCA9A:	lda #$0A
-	jmp LCAD8
+set_col_ltred:
+	lda #$0A
+	jmp set_col
 
-LCA9F:	lda #$0B
-	jmp LCAD8
+set_col_dkgray:
+	lda #$0B
+	jmp set_col
 
-LCAA4:	lda #$0C
-	jmp LCAD8
+set_col_gray:
+	lda #$0C
+	jmp set_col
 
-LCAA9:	lda #$0D
-	jmp LCAD8
+set_col_ltgreen:
+	lda #$0D
+	jmp set_col
 
-LCAAE:	lda #$0E
-	jmp LCAD8
+set_col_ltblue:
+	lda #$0E
+	jmp set_col
 
-LCAB3:	lda #$0F
-	jmp LCAD8
+set_col_ltgray:
+	lda #$0F
+	jmp set_col
 
-LCAB8:	lda #$04
-	jmp LCAD8
+set_col_purple:
+	lda #4
+	jmp set_col
 
-LCABD:	dec $D3
-	bpl LCACC
-	lda $D6
-	beq LCACA
-	jsr LCA0A
-	lda #$4F
-LCACA:	sta $D3
-LCACC:	rts
+move_csr_left:
+	dec PNTR
+	bpl @2
+	lda TBLX
+	beq @1
+	jsr move_csr_up
+	lda #COLUMNS - 1
+@1:	sta PNTR
+@2:	rts
 
-LCACD:	lda #$07
-	jmp LCAD8
+set_col_yellow:
+	lda #7
+	jmp set_col
 
-LCAD2:	lda #$03
-	jmp LCAD8
+set_col_cyan:
+	lda #3
+	jmp set_col
 
-LCAD7:	rts
+rts0:	rts
 
-LCAD8:	asl a
+set_col:
+	asl a
 	asl a
 	asl a
 	asl a
 	sta COLOR
-	lda LCFEF
+	lda bgcolor
 	and #$0F
 	ora COLOR
 	sta COLOR
 	rts
 
-LCAEB:	lda $D6
+calc_user:
+	lda TBLX
 	asl a
 	tax
-	lda LCAFD,x
-	sta $F3
-	lda LCAFD+1,x
+	lda mul_40_tab,x
+	sta USER
+	lda mul_40_tab + 1,x
 	clc
-	adc #$D8
-	sta $F4
+	adc #>VICCOL
+	sta USER + 1
 	rts
 
-LCAFD:	.word $0000,$0028,$0050,$0078
-	.word $00A0,$00C8,$00F0,$0118
-	.word $0140,$0168,$0190,$01B8
-	.word $01E0,$0208,$0230,$0258
-	.word $0280,$02A8,$02D0,$02F8
-	.word $0320,$0348,$0370,$0398
-	.word $03C0
-LCB2F:	lda $D6
+mul_40_tab:
+	.repeat 25, i
+	.word i*40
+	.endrep
+
+calc_bitmap_ptr:
+	lda TBLX
 	asl a
 	tax
-	lda $D3
+	lda PNTR
 	and #$FE
 	clc
-	adc LCB66,x
-	sta $DD
-	lda LCB66+1,x
-	adc #$00
-	sta $DE
-	asl $DD
-	rol $DE
-	asl $DD
-	rol $DE
-	lda #$E0
+	adc mul_80_tab,x
+	sta bitmap_ptr
+	lda mul_80_tab + 1,x
+	adc #0
+	sta bitmap_ptr + 1
+	asl bitmap_ptr
+	rol bitmap_ptr + 1
+	asl bitmap_ptr
+	rol bitmap_ptr + 1
+	lda #>BITMAP
 	clc
-	adc $DE
-	sta $DE
+	adc bitmap_ptr + 1
+	sta bitmap_ptr + 1
 	rts
 
-LCB54:	lda $D6
+calc_pnt:
+	lda TBLX
 	asl a
 	tax
-	lda LCB66,x
-	sta $D1
-	lda LCB66+1,x
+	lda mul_80_tab,x
+	sta PNT
+	lda mul_80_tab + 1,x
 	clc
-	adc #$C0
-	sta $D2
+	adc #>VICSCN
+	sta PNT + 1
 	rts
 
-LCB66:	.word $0000,$0050,$00A0,$00F0
-	.word $0140,$0190,$01E0,$0230
-	.word $0280,$02D0,$0320,$0370
-	.word $03C0,$0410,$0460,$04B0
-	.word $0500,$0550,$05A0,$05F0
-	.word $0640,$0690,$06E0,$0730
-	.word $0780
-LCB98:	ldy $D3
-	sty LCFF0
-	lda ($D1),y
-	jsr LCEA8
-	lda $028D
-	and #$04
-	beq LCBB2
-	ldy #$00
-LCBAB:	nop
+mul_80_tab:
+	.repeat 25, i
+	.word i*80
+	.endrep
+
+scroll_up:
+	ldy PNTR
+	sty pntr2
+	lda (PNT),y
+	jsr _draw_char ; draw character under cursor again XXX ???
+; delay if CBM pressed
+	lda SHFLAG
+	and #4
+	beq @2
+; ***START*** identical to $E94B in KERNAL
+	ldy #0
+@1:	nop
 	dex
-	bne LCBAB
+	bne @1
 	dey
-	bne LCBAB
-LCBB2:	ldy #$50
-	lda #$C0
-	sty $D1
-	sta $D2
-	ldy #$00
-	sty $E1
-	sta $E2
-LCBC0:	lda ($D1),y
-	sta ($E1),y
+	bne @1
+; ***END*** identical to $E94B in KERNAL
+; scroll screen up
+@2:	ldy #COLUMNS
+	lda #>VICSCN
+	sty PNT
+	sta PNT + 1
+	ldy #0
+	sty tmp_ptr
+	sta tmp_ptr + 1
+:	lda (PNT),y
+	sta (tmp_ptr),y
 	iny
-	bne LCBC0
-	inc $D2
-	inc $E2
-	lda $D2
-	cmp #$C8
-	bcc LCBC0
-	ldy #$40
-	lda #$E1
-	sty $DD
-	sta $DE
-	ldy #$00
-	lda #$E0
-	sty $E1
-	sta $E2
-LCBE1:	lda ($DD),y
-	sta ($E1),y
+	bne :-
+	inc PNT + 1
+	inc tmp_ptr + 1
+	lda PNT + 1
+	cmp #200
+	bcc :-
+	ldy #<(BITMAP + 320)
+	lda #>(BITMAP + 320)
+	sty bitmap_ptr
+	sta bitmap_ptr + 1
+	ldy #<BITMAP
+	lda #>BITMAP
+	sty tmp_ptr
+	sta tmp_ptr + 1
+:	lda (bitmap_ptr),y
+	sta (tmp_ptr),y
 	iny
-	bne LCBE1
-	inc $DE
-	inc $E2
-	lda $E2
-	cmp #$FE
-	bcc LCBE1
-	ldy #$28
-	lda #$D8
-	sty $F3
-	sta $F4
-	ldy #$00
-	sty $E1
-	sta $E2
-LCC00:	lda ($F3),y
-	sta ($E1),y
+	bne :-
+	inc bitmap_ptr + 1
+	inc tmp_ptr + 1
+	lda tmp_ptr + 1
+	cmp #>(BITMAP + 8000) - 1
+	bcc :-
+	ldy #40
+	lda #>VICCOL
+	sty USER
+	sta USER + 1
+	ldy #0
+	sty tmp_ptr
+	sta tmp_ptr + 1
+:	lda (USER),y
+	sta (tmp_ptr),y
 	iny
-	bne LCC00
-	inc $F4
-	inc $E2
-	lda $E2
-	cmp #$DB
-	bcc LCC00
-LCC11:	lda $DB27,y
-	sta $DAFF,y
+	bne :-
+	inc USER + 1
+	inc tmp_ptr + 1
+	lda tmp_ptr + 1
+	cmp #>(VICCOL+$0300)
+	bcc :-
+:	lda VICCOL + 807,y
+	sta VICCOL + 807 - 40,y
 	iny
 	cpy #$C0
-	bcc LCC11
-	lda #$18
-	sta $D6
-	jsr LCA2A
-	lda LCFF0
-	sta $D3
-	lda #$04
-	sta $CD
+	bcc :-
+	lda #LINES - 1
+	sta TBLX
+	jsr clr_curline
+	lda pntr2
+	sta PNTR
+	lda #4
+	sta BLNCT
 	rts
 
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-LCC48:	cmp #$FF
-	bne LCC4E
-	lda #$7E
-LCC4E:	pha
+	.res 27, $ea
+
+petscii_to_screencode:
+	cmp #$FF ; PI
+	bne @1
+	lda #$7E ; screencode for PI
+@1:	pha
 	and #$E0
-	ldx #$05
-LCC53:	cmp LCC64,x
-	beq LCC5D
+	ldx #5
+@2:	cmp tab1,x
+	beq @3
 	dex
-	bpl LCC53
-	ldx #$00
-LCC5D:	pla
+	bpl @2
+	ldx #0
+@3:	pla
 	and #$1F
-	ora LCC6A,x
+	ora tab2,x
 	rts
 
-LCC64:	.byte $E0,$C0,$A0,$60,$40,$20
-LCC6A:	.byte $60,$40,$60,$40,$00,$20
-LCC70:	stx $D7
-	jsr LCC79
-	jsr LCCDD
+tab1:	.byte $E0,$C0,$A0,$60,$40,$20
+tab2:	.byte $60,$40,$60,$40,$00,$20
+
+draw_char_with_col:
+	stx DATA
+	jsr draw_char
+	jsr set_viccol
 	rts
 
-LCC79:	ldy $D3
-	sta ($D1),y
-	ldy #$00
-	sty LCFF3
-	cmp #$00
-	bpl LCC8D
+draw_char:
+	ldy PNTR
+	sta (PNT),y
+	ldy #0
+	sty rvs_mask
+	cmp #0
+	bpl @1
 	ldy #$FF
-	sty LCFF3
+	sty rvs_mask
 	and #$7F
-LCC8D:	ldy LCFF5
-	beq LCC94
+@1:	ldy is_text
+	beq @2
 	ora #$80
-LCC94:	sta $DF
-	lda #$1A
-	sta $E0
-	asl $DF
-	rol $E0
-	asl $DF
-	rol $E0
-	asl $DF
-	rol $E0
-	jsr LCB2F
-	lda $D3
-	and #$01
-	bne LCCC6
-	ldy #$07
-LCCB1:	lda ($DD),y
+@2:	sta charset_ptr
+	lda #(>charset) >> 3
+	sta charset_ptr + 1
+	asl charset_ptr
+	rol charset_ptr + 1
+	asl charset_ptr
+	rol charset_ptr + 1
+	asl charset_ptr
+	rol charset_ptr + 1
+	jsr calc_bitmap_ptr
+	lda PNTR
+	and #1
+	bne @4
+	ldy #7
+@3:	lda (bitmap_ptr),y
 	and #$0F
-	sta ($DD),y
-	lda ($DF),y
-	eor LCFF3
+	sta (bitmap_ptr),y
+	lda (charset_ptr),y
+	eor rvs_mask
 	and #$F0
-	ora ($DD),y
-	sta ($DD),y
+	ora (bitmap_ptr),y
+	sta (bitmap_ptr),y
 	dey
-	bpl LCCB1
+	bpl @3
+	rts
+@4:	ldy #7
+@5:	lda (bitmap_ptr),y
+	and #$F0
+	sta (bitmap_ptr),y
+	lda (charset_ptr),y
+	eor rvs_mask
+	and #$0F
+	ora (bitmap_ptr),y
+	sta (bitmap_ptr),y
+	dey
+	bpl @5
 	rts
 
-LCCC6:	ldy #$07
-LCCC8:	lda ($DD),y
-	and #$F0
-	sta ($DD),y
-	lda ($DF),y
-	eor LCFF3
-	and #$0F
-	ora ($DD),y
-	sta ($DD),y
-	dey
-	bpl LCCC8
-	rts
-
-LCCDD:	lda $D3
+set_viccol:
+	lda PNTR
 	lsr a
 	tay
-	lda $D7
-	sta ($F3),y
+	lda DATA
+	sta (USER),y
 	rts
 
-LCCE6:	lda $99
-	bne LCCF5
-	lda $D3
-	sta $CA
-	lda $D6
-	sta $C9
-	jmp LCD68
+new_basin:
+; ***START*** almost identical to $F157 in KERNAL
+	lda DFLTN
+	bne @1
+	lda PNTR
+	sta LXSP + 1
+	lda TBLX
+	sta LXSP
+	jmp @10
+@1:	cmp #3
+	bne @2
+	sta CRSW
+	lda LNMX
+	sta INDX
+	jmp @10
+@2:	jmp $F173 ; part of BASIN
+; ***END*** almost identical to $F157 in KERNAL
 
-LCCF5:	cmp #$03
-	bne LCD02
-	sta $D0
-	lda $D5
-	sta $C8
-	jmp LCD68
-
-LCD02:	jmp $F173 ; part of BASIN
-
-LCD05:	jsr LC874
-LCD08:	lda $C6
-	sta $CC
-	beq LCD08
+@3:	jsr bsout_core
+@4:	lda NDX
+	sta BLNSW
+	beq @4
 	sei
-	lda $CF
-	beq LCD23
-	lda #$00
-	sta $CF
-	lda #$02
-	sta $CD
-	ldx $0287
-	lda $CE
-	jsr LCE84
-LCD23:	jsr $E5B4 ; input from the keyboard buffer
+	lda BLNON
+	beq @5
+	lda #0
+	sta BLNON
+	lda #2
+	sta BLNCT
+	ldx GDCOL
+	lda GDBLN
+	jsr _draw_char_with_col
+; ***START*** almost identical to $E5E7 in KERNAL
+@5:	jsr $E5B4 ; input from the keyboard buffer
 	cmp #$83
-	bne LCD3A
-	ldx #$09
+	bne @7
+	ldx #9
 	sei
-	stx $C6
-LCD2F:	lda $ECE6,x
-	sta $0276,x
+	stx NDX
+@6:	lda $ECE7 - 1,x ; "LOAD\rRUN\r"
+	sta KEYD - 1,x
 	dex
-	bne LCD2F
-	beq LCD08
-LCD3A:	cmp #$0D
-	bne LCD05
-	ldy #$4F
-	sty $D0
-LCD42:	lda ($D1),y
+	bne @6
+	beq @4
+@7:	cmp #$0D
+	bne @3
+	ldy #COLUMNS - 1 ; ***DIFFERENCE***
+	sty CRSW
+@8:	lda (PNT),y
 	cmp #$20
-	bne LCD4B
+	bne @9
 	dey
-	bne LCD42
-LCD4B:	iny
-	sty $C8
-	ldy #$00
-	sty $D3
-	sty $D4
-	lda $C9
-	bmi LCD70
-	ldx $D6
-	cpx $C9
-	bne LCD70
-	lda $CA
-	sta $D3
-	cmp $C8
-	bcc LCD70
-	bcs LCD93
-LCD68:	tya
+	bne @8
+@9:	iny
+	sty INDX
+	ldy #0
+	sty PNTR
+	sty QTSW
+	lda LXSP
+	bmi @11
+	ldx TBLX
+; ***DIFFERENCE*** missing JSR
+	cpx LXSP
+	bne @11
+	lda LXSP + 1
+	sta PNTR
+	cmp INDX
+	bcc @11
+	bcs @15
+@10:	tya
 	pha
 	txa
 	pha
-	lda $D0
-	beq LCD08
-LCD70:	ldy $D3
-	lda ($D1),y
-	sta $D7
+	lda CRSW
+	beq @4
+@11:	ldy PNTR
+	lda (PNT),y
+	sta DATA
 	and #$3F
-	asl $D7
-	bit $D7
-	bpl LCD80
+	asl DATA
+	bit DATA
+	bpl @12
 	ora #$80
-LCD80:	bcc LCD86
-	ldx $D4
-	bne LCD8A
-LCD86:	bvs LCD8A
+@12:	bcc @13
+	ldx QTSW
+	bne @14
+@13:	bvs @14
 	ora #$40
-LCD8A:	inc $D3
+@14:	inc PNTR
 	jsr $E684 ; if open quote toggle cursor quote flag
-	cpy $C8
-	bne LCDAA
-LCD93:	lda #$00
-	sta $D0
+	cpy INDX
+	bne @18
+@15:	lda #0
+	sta CRSW
 	lda #$0D
-	ldx $99
-	cpx #$03
-	beq LCDA5
-	ldx $9A
-	cpx #$03
-	beq LCDA8
-LCDA5:	jsr LC874
-LCDA8:	lda #$0D
-LCDAA:	sta $D7
+	ldx DFLTN
+	cpx #3
+	beq @16
+	ldx DFLTO
+	cpx #3
+	beq @17
+@16:	jsr bsout_core ; ***DIFFERENCE***
+@17:	lda #$0D
+@18:	sta DATA
 	pla
 	tax
 	pla
 	tay
-	jmp LCECC
+; ***END*** almost identical to $E5E7 in KERNAL
+	jmp new_basin2
 
 	nop
-LCDB4:	jsr $FFEA ; increment real time clock
-LCDB7:	lda $D021
-	sta LCFEF
-	lda $01
+
+new_cinv:
+	jsr $FFEA ; increment real time clock
+	lda $D021
+	sta bgcolor
+	lda R6510
 	pha
-	lda #$00
-	sta $01
-	lda $CC
-	bne LCDF2
-	dec $CD
-	bne LCDF2
-	lda #$1E
-	sta $CD
-	ldy $D3
-	lsr $CF
-	ldx $0287
-	lda ($D1),y
-	bcs LCDED
-	inc $CF
-	sta $CE
-	lda $D3
+	lda #0
+	sta R6510
+	lda BLNSW
+	bne @2
+	dec BLNCT
+	bne @2
+	lda #30
+	sta BLNCT
+	ldy PNTR
+	lsr BLNON
+	ldx GDCOL
+	lda (PNT),y
+	bcs @1
+	inc BLNON
+	sta GDBLN
+	lda PNTR
 	lsr a
 	tay
-	lda ($F3),y
-	sta $0287
+	lda (USER),y
+	sta GDCOL
 	ldx COLOR
-	lda $CE
-LCDED:	eor #$80
-	jsr LCE84
-LCDF2:	lda LCFEF
+	lda GDBLN
+@1:	eor #$80
+	jsr _draw_char_with_col
+@2:	lda bgcolor
 	and #$0F
-	cmp LCFF4
-	beq LCE37
-	sta LCFF4
-	lda $D6
+	cmp color2
+	beq new_cinv2
+	sta color2
+	lda TBLX
 	pha
-	lda #$18
-	sta $D6
-LCE06:	jsr LCAEB
+	lda #LINES - 1
+	sta TBLX
+@3:	jsr calc_user
 	ldy #$27
-LCE0B:	lda ($F3),y
+@4:	lda (USER),y
 	and #$F0
-	ora LCFF4
-	sta ($F3),y
+	ora color2
+	sta (USER),y
 	dey
-	bpl LCE0B
-	dec $D6
-	bpl LCE06
+	bpl @4
+	dec TBLX
+	bpl @3
 	lda COLOR
 	and #$F0
-	ora LCFF4
+	ora color2
 	sta COLOR
-	lda $0287
+	lda GDCOL
 	and #$F0
-	ora LCFF4
-	jmp LCED6
+	ora color2
+	jmp new_cinv3
 
-LCE31:	jmp LCDB4
+_new_cinv:
+	jmp new_cinv
 
-	jmp LCDB7
+; XXX unused?
+	jmp new_cinv + 3
 
-LCE37:	pla
-	sta $01
+new_cinv2:
+	pla
+	sta R6510
 	lda $D018
-	and #$02
-	cmp LCFF5
-	beq LCE81
-	sta LCFF5
-	lda $D3
+	and #2
+	cmp is_text
+	beq @6
+	sta is_text
+	lda PNTR
 	pha
-	lda $D6
+	lda TBLX
 	pha
-	jsr LC99A
-LCE50:	ldy $D3
-	lda ($D1),y
+	jsr cmd_home
+@1:	ldy PNTR
+	lda (PNT),y
 	and #$7F
 	cmp #$20
-	beq LCE63
-	bne LCE5E
-	bcc LCE63
-LCE5E:	lda ($D1),y
-	jsr LCEA8
-LCE63:	lda $D3
-	cmp #$4F
-	bne LCE6F
-	lda $D6
-	cmp #$18
-	beq LCE75
-LCE6F:	jsr LC9DA
-	jmp LCE50
-
-LCE75:	pla
-	sta $D6
+	beq @3
+	bne @2
+	bcc @3
+@2:	lda (PNT),y
+	jsr _draw_char ; re-draw character
+@3:	lda PNTR
+	cmp #COLUMNS - 1
+	bne @4
+	lda TBLX
+	cmp #LINES - 1
+	beq @5
+@4:	jsr move_csr_right
+	jmp @1
+@5:	pla
+	sta TBLX
 	pla
-	sta $D3
-	jsr LCB54
-	jsr LCAEB
-LCE81:	jmp $EA61
+	sta PNTR
+	jsr calc_pnt
+	jsr calc_user
+@6:	jmp $EA61
 
-LCE84:	php
+.macro exec0 addr, save_y
+	php
 	sei
+.ifnblank save_y
 	tay
-	lda $01
+.endif
+	lda R6510
 	pha
-	lda #$00
-	sta $01
+	lda #0
+	sta R6510
+.ifnblank save_y
 	tya
-	jsr LCC70
+.endif
+	jsr addr
 	pla
-	sta $01
+	sta R6510
 	plp
 	rts
+.endmacro
 
-LCE97:	php
-	sei
-	lda $01
-	pha
-	lda #$00
-	sta $01
-	jsr LCA2A
-	pla
-	sta $01
-	plp
-	rts
+_draw_char_with_col:
+	exec0 draw_char_with_col, Y
 
-LCEA8:	php
-	sei
-	tay
-	lda $01
-	pha
-	lda #$00
-	sta $01
-	tya
-	jsr LCC79
-	pla
-	sta $01
-	plp
-	rts
+_clr_curline:
+	exec0 clr_curline
 
-LCEBB:	php
-	sei
-	lda $01
-	pha
-	lda #$00
-	sta $01
-	jsr LCB98
-	pla
-	sta $01
-	plp
-	rts
+_draw_char:
+	exec0 draw_char, Y
 
-LCECC:	lda $D7
-	cmp #$DE
-	bne LCED4
+_scroll_up:
+	exec0 scroll_up
+
+; XXX these look like patches
+
+new_basin2:
+	lda DATA
+	cmp #$DE ; convert PI
+	bne :+
 	lda #$FF
-LCED4:	clc
+:	clc
 	rts
 
-LCED6:	sta $0287
+new_cinv3:
+	sta GDCOL
 	pla
-	sta $D6
-	jsr LCAEB
-	jmp LCE37
+	sta TBLX
+	jsr calc_user
+	jmp new_cinv2
 
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$4D,$4F
-	.byte $44,$49,$46,$49,$45,$44,$20,$46
-	.byte $4F,$52,$20,$20,$20,$20,$20,$20
-	.byte $43,$50,$2F,$4D,$20,$20,$20,$20
-	.byte $20,$42,$5B,$FF,$FF,$FF,$D0,$FF
-	.byte $FF,$FF,$FF,$FF,$FF,$FF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DC,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$DF,$DF,$DF
-	.byte $DF,$DF,$DF,$DF,$DF,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA,$EA,$EA
-LCFEF:	.byte $F0
-LCFF0:	.byte $EA,$EA
-LCFF2:	.byte $00
-LCFF3:	.byte $FF
-LCFF4:	.byte $00
-LCFF5:	.byte $00,$EA,$EA,$EA,$EA,$EA,$EA,$EA
-	.byte $EA,$EA,$EA
-charset:.byte $00,$22,$55,$77,$77,$44,$33,$00
-	.byte $00,$22,$55,$77,$55,$55,$55,$00
-	.byte $00,$66,$55,$66,$55,$55,$66,$00
-	.byte $00,$22,$55,$44,$44,$55,$22,$00
-	.byte $00,$66,$55,$55,$55,$55,$66,$00
-	.byte $00,$77,$44,$77,$44,$44,$77,$00
-	.byte $00,$77,$44,$66,$44,$44,$44,$00
-	.byte $00,$22,$55,$44,$77,$55,$22,$00
-	.byte $00,$55,$55,$77,$55,$55,$55,$00
-	.byte $00,$77,$22,$22,$22,$22,$77,$00
-	.byte $00,$77,$11,$11,$11,$55,$22,$00
-	.byte $00,$44,$55,$66,$44,$66,$55,$00
-	.byte $00,$44,$44,$44,$44,$44,$77,$00
-	.byte $00,$55,$77,$55,$55,$55,$55,$00
-	.byte $00,$66,$55,$55,$55,$55,$55,$00
-	.byte $00,$77,$55,$55,$55,$55,$77,$00
-	.byte $00,$66,$55,$55,$66,$44,$44,$00
-	.byte $00,$22,$55,$55,$55,$22,$11,$00
-	.byte $00,$66,$55,$55,$66,$55,$55,$00
-	.byte $00,$33,$44,$22,$11,$55,$22,$00
-	.byte $00,$77,$22,$22,$22,$22,$22,$00
-	.byte $00,$55,$55,$55,$55,$55,$77,$00
-	.byte $00,$55,$55,$55,$55,$55,$22,$00
-	.byte $00,$55,$55,$55,$55,$77,$55,$00
-	.byte $00,$55,$55,$22,$22,$55,$55,$00
-	.byte $00,$55,$55,$55,$22,$22,$22,$00
-	.byte $00,$77,$11,$22,$22,$44,$77,$00
-	.byte $00,$66,$44,$44,$44,$44,$66,$00
-	.byte $00,$33,$22,$77,$22,$22,$77,$00
-	.byte $00,$33,$11,$11,$11,$11,$33,$00
-	.byte $00,$22,$77,$22,$22,$22,$22,$00
-	.byte $00,$00,$22,$44,$77,$44,$22,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$22,$22,$22,$22,$00,$22,$00
-	.byte $00,$55,$55,$00,$00,$00,$00,$00
-	.byte $00,$55,$77,$55,$77,$55,$55,$00
-	.byte $00,$33,$66,$22,$33,$77,$22,$00
-	.byte $00,$55,$11,$22,$22,$44,$55,$00
-	.byte $00,$22,$55,$55,$22,$55,$77,$00
-	.byte $00,$11,$22,$00,$00,$00,$00,$00
-	.byte $00,$22,$44,$44,$44,$44,$22,$00
-	.byte $00,$22,$11,$11,$11,$11,$22,$00
-	.byte $00,$00,$00,$55,$22,$55,$00,$00
-	.byte $00,$00,$22,$22,$77,$22,$22,$00
-	.byte $00,$00,$00,$00,$00,$22,$44,$00
-	.byte $00,$00,$00,$00,$77,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$22,$00
-	.byte $00,$11,$11,$22,$22,$44,$44,$00
-	.byte $00,$22,$55,$55,$55,$55,$22,$00
-	.byte $00,$22,$66,$22,$22,$22,$77,$00
-	.byte $00,$22,$55,$11,$22,$44,$77,$00
-	.byte $00,$66,$11,$22,$11,$11,$66,$00
-	.byte $00,$55,$55,$55,$77,$11,$11,$00
-	.byte $00,$77,$44,$22,$11,$55,$22,$00
-	.byte $00,$33,$44,$66,$55,$55,$22,$00
-	.byte $00,$77,$55,$11,$22,$22,$22,$00
-	.byte $00,$22,$55,$22,$55,$55,$22,$00
-	.byte $00,$22,$55,$55,$33,$11,$66,$00
-	.byte $00,$00,$00,$22,$00,$22,$00,$00
-	.byte $00,$00,$00,$22,$00,$22,$44,$00
-	.byte $00,$11,$22,$44,$44,$22,$11,$00
-	.byte $00,$00,$00,$77,$00,$77,$00,$00
-	.byte $00,$44,$22,$11,$11,$22,$44,$00
-	.byte $00,$22,$55,$11,$22,$00,$22,$00
-	.byte $00,$00,$00,$00,$FF,$00,$00,$00
-	.byte $00,$00,$00,$22,$77,$77,$22,$00
-	.byte $44,$44,$44,$44,$44,$44,$44,$44
-	.byte $00,$00,$00,$FF,$00,$00,$00,$00
-	.byte $00,$00,$FF,$00,$00,$00,$00,$00
-	.byte $00,$FF,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$FF,$00,$00
-	.byte $44,$44,$44,$44,$44,$44,$44,$44
-	.byte $22,$22,$22,$22,$22,$22,$22,$22
-	.byte $00,$00,$00,$00,$CC,$22,$22,$22
-	.byte $22,$22,$22,$22,$11,$00,$00,$00
-	.byte $22,$22,$22,$22,$CC,$00,$00,$00
-	.byte $88,$88,$88,$88,$88,$88,$88,$FF
-	.byte $88,$88,$44,$44,$22,$22,$11,$11
-	.byte $11,$11,$22,$22,$44,$44,$88,$88
-	.byte $FF,$88,$88,$88,$88,$88,$88,$88
-	.byte $FF,$11,$11,$11,$11,$11,$11,$11
-	.byte $00,$00,$22,$77,$77,$77,$22,$00
-	.byte $00,$00,$00,$00,$00,$00,$FF,$00
-	.byte $00,$00,$00,$55,$77,$77,$22,$00
-	.byte $88,$88,$88,$88,$88,$88,$88,$88
-	.byte $00,$00,$00,$00,$11,$22,$22,$22
-	.byte $99,$99,$66,$66,$66,$66,$99,$99
-	.byte $00,$00,$22,$55,$55,$55,$22,$00
-	.byte $00,$00,$00,$22,$55,$22,$22,$00
-	.byte $11,$11,$11,$11,$11,$11,$11,$11
-	.byte $00,$00,$22,$22,$77,$22,$22,$00
-	.byte $22,$22,$22,$22,$FF,$22,$22,$22
-	.byte $88,$44,$88,$44,$88,$44,$88,$44
-	.byte $22,$22,$22,$22,$22,$22,$22,$22
-	.byte $00,$00,$00,$88,$77,$55,$55,$00
-	.byte $FF,$77,$77,$33,$33,$11,$11,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
-	.byte $00,$00,$00,$00,$FF,$FF,$FF,$FF
-	.byte $FF,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$FF
-	.byte $88,$88,$88,$88,$88,$88,$88,$88
-	.byte $AA,$55,$AA,$55,$AA,$55,$AA,$55
-	.byte $11,$11,$11,$11,$11,$11,$11,$11
-	.byte $00,$00,$00,$00,$AA,$55,$AA,$55
-	.byte $FF,$EE,$EE,$CC,$CC,$88,$88,$00
-	.byte $11,$11,$11,$11,$11,$11,$11,$11
-	.byte $22,$22,$22,$22,$33,$22,$22,$22
-	.byte $00,$00,$00,$00,$33,$33,$33,$33
-	.byte $22,$22,$22,$22,$33,$00,$00,$00
-	.byte $00,$00,$00,$00,$EE,$22,$22,$22
-	.byte $00,$00,$00,$00,$00,$00,$FF,$FF
-	.byte $00,$00,$00,$00,$33,$22,$22,$22
-	.byte $22,$22,$22,$22,$FF,$00,$00,$00
-	.byte $00,$00,$00,$00,$FF,$22,$22,$22
-	.byte $22,$22,$22,$22,$EE,$22,$22,$22
-	.byte $88,$88,$88,$88,$88,$88,$88,$88
-	.byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
-	.byte $33,$33,$33,$33,$33,$33,$33,$33
-	.byte $FF,$FF,$00,$00,$00,$00,$00,$00
-	.byte $FF,$FF,$FF,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$FF,$FF,$FF
-	.byte $11,$11,$11,$11,$11,$11,$11,$FF
-	.byte $00,$00,$00,$00,$CC,$CC,$CC,$CC
-	.byte $33,$33,$33,$33,$00,$00,$00,$00
-	.byte $22,$22,$22,$22,$EE,$00,$00,$00
-	.byte $CC,$CC,$CC,$CC,$00,$00,$00,$00
-	.byte $CC,$CC,$CC,$CC,$33,$33,$33,$33
-	.byte $00,$22,$55,$77,$77,$44,$33,$00
-	.byte $00,$00,$66,$11,$33,$55,$33,$00
-	.byte $00,$44,$44,$66,$55,$55,$66,$00
-	.byte $00,$00,$22,$55,$44,$55,$22,$00
-	.byte $00,$11,$11,$33,$55,$55,$33,$00
-	.byte $00,$00,$22,$55,$77,$44,$22,$00
-	.byte $00,$22,$44,$66,$44,$44,$44,$00
-	.byte $00,$00,$33,$55,$55,$33,$11,$66
-	.byte $00,$44,$44,$66,$55,$55,$55,$00
-	.byte $00,$22,$00,$66,$22,$22,$77,$00
-	.byte $00,$11,$00,$33,$11,$11,$55,$22
-	.byte $00,$44,$44,$55,$66,$66,$55,$00
-	.byte $00,$66,$22,$22,$22,$22,$77,$00
-	.byte $00,$00,$55,$77,$55,$55,$55,$00
-	.byte $00,$00,$66,$55,$55,$55,$55,$00
-	.byte $00,$00,$22,$55,$55,$55,$22,$00
-	.byte $00,$00,$66,$55,$55,$66,$44,$44
-	.byte $00,$00,$33,$55,$55,$33,$11,$11
-	.byte $00,$00,$66,$55,$44,$44,$44,$00
-	.byte $00,$00,$33,$44,$22,$11,$66,$00
-	.byte $00,$44,$66,$44,$44,$55,$22,$00
-	.byte $00,$00,$55,$55,$55,$55,$33,$00
-	.byte $00,$00,$55,$55,$55,$55,$22,$00
-	.byte $00,$00,$55,$55,$55,$77,$55,$00
-	.byte $00,$00,$55,$55,$22,$55,$55,$00
-	.byte $00,$00,$55,$55,$55,$33,$11,$66
-	.byte $00,$00,$77,$11,$22,$44,$77,$00
-	.byte $00,$66,$44,$44,$44,$44,$66,$00
-	.byte $00,$33,$22,$77,$22,$22,$77,$00
-	.byte $00,$33,$11,$11,$11,$11,$33,$00
-	.byte $00,$22,$77,$22,$22,$22,$22,$00
-	.byte $00,$00,$22,$44,$77,$44,$22,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$22,$22,$22,$22,$00,$22,$00
-	.byte $00,$55,$55,$00,$00,$00,$00,$00
-	.byte $00,$55,$77,$55,$77,$55,$55,$00
-	.byte $00,$33,$66,$22,$33,$77,$22,$00
-	.byte $00,$55,$11,$22,$22,$44,$55,$00
-	.byte $00,$22,$55,$55,$22,$55,$77,$00
-	.byte $00,$11,$22,$00,$00,$00,$00,$00
-	.byte $00,$22,$44,$44,$44,$44,$22,$00
-	.byte $00,$22,$11,$11,$11,$11,$22,$00
-	.byte $00,$00,$00,$55,$22,$55,$00,$00
-	.byte $00,$00,$22,$22,$77,$22,$22,$00
-	.byte $00,$00,$00,$00,$00,$22,$44,$00
-	.byte $00,$00,$00,$00,$77,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$22,$00
-	.byte $00,$11,$11,$22,$22,$44,$44,$00
-	.byte $00,$22,$55,$55,$55,$55,$22,$00
-	.byte $00,$22,$66,$22,$22,$22,$77,$00
-	.byte $00,$22,$55,$11,$22,$44,$77,$00
-	.byte $00,$66,$11,$22,$11,$11,$66,$00
-	.byte $00,$55,$55,$55,$77,$11,$11,$00
-	.byte $00,$77,$44,$22,$11,$55,$22,$00
-	.byte $00,$33,$44,$66,$55,$55,$22,$00
-	.byte $00,$77,$55,$11,$22,$22,$22,$00
-	.byte $00,$22,$55,$22,$55,$55,$22,$00
-	.byte $00,$22,$55,$55,$33,$11,$66,$00
-	.byte $00,$00,$00,$22,$00,$22,$00,$00
-	.byte $00,$00,$00,$22,$00,$22,$44,$00
-	.byte $00,$11,$22,$44,$44,$22,$11,$00
-	.byte $00,$00,$00,$77,$00,$77,$00,$00
-	.byte $00,$44,$22,$11,$11,$22,$44,$00
-	.byte $00,$22,$55,$11,$22,$00,$22,$00
-	.byte $00,$00,$00,$00,$FF,$00,$00,$00
-	.byte $00,$22,$55,$77,$55,$55,$55,$00
-	.byte $00,$66,$55,$66,$55,$55,$66,$00
-	.byte $00,$22,$55,$44,$44,$55,$22,$00
-	.byte $00,$66,$55,$55,$55,$55,$66,$00
-	.byte $00,$77,$44,$77,$44,$44,$77,$00
-	.byte $00,$77,$44,$66,$44,$44,$44,$00
-	.byte $00,$22,$55,$44,$77,$55,$22,$00
-	.byte $00,$55,$55,$77,$55,$55,$55,$00
-	.byte $00,$77,$22,$22,$22,$22,$77,$00
-	.byte $00,$77,$11,$11,$11,$55,$22,$00
-	.byte $00,$44,$55,$66,$44,$66,$55,$00
-	.byte $00,$44,$44,$44,$44,$44,$77,$00
-	.byte $00,$55,$77,$55,$55,$55,$55,$00
-	.byte $00,$66,$55,$55,$55,$55,$55,$00
-	.byte $00,$77,$55,$55,$55,$55,$77,$00
-	.byte $00,$66,$55,$55,$66,$44,$44,$00
-	.byte $00,$22,$55,$55,$55,$22,$11,$00
-	.byte $00,$66,$55,$55,$66,$55,$55,$00
-	.byte $00,$33,$44,$22,$11,$55,$22,$00
-	.byte $00,$77,$22,$22,$22,$22,$22,$00
-	.byte $00,$55,$55,$55,$55,$55,$77,$00
-	.byte $00,$55,$55,$55,$55,$55,$22,$00
-	.byte $00,$55,$55,$55,$55,$77,$55,$00
-	.byte $00,$55,$55,$22,$22,$55,$55,$00
-	.byte $00,$55,$55,$55,$22,$22,$22,$00
-	.byte $00,$77,$11,$22,$22,$44,$77,$00
-	.byte $22,$22,$22,$22,$FF,$22,$22,$22
-	.byte $88,$44,$88,$44,$88,$44,$88,$44
-	.byte $22,$22,$22,$22,$22,$22,$22,$22
-	.byte $55,$AA,$55,$AA,$55,$AA,$55,$AA
-	.byte $33,$99,$CC,$66,$33,$99,$CC,$66
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
-	.byte $00,$00,$00,$00,$FF,$FF,$FF,$FF
-	.byte $FF,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$FF
-	.byte $88,$88,$88,$88,$88,$88,$88,$88
-	.byte $AA,$55,$AA,$55,$AA,$55,$AA,$55
-	.byte $11,$11,$11,$11,$11,$11,$11,$11
-	.byte $00,$00,$00,$00,$AA,$55,$AA,$55
-	.byte $CC,$99,$33,$66,$CC,$99,$33,$66
-	.byte $11,$11,$11,$11,$11,$11,$11,$11
-	.byte $22,$22,$22,$22,$33,$22,$22,$22
-	.byte $00,$00,$00,$00,$33,$33,$33,$33
-	.byte $22,$22,$22,$22,$33,$00,$00,$00
-	.byte $00,$00,$00,$00,$EE,$22,$22,$22
-	.byte $00,$00,$00,$00,$00,$00,$FF,$FF
-	.byte $00,$00,$00,$00,$33,$22,$22,$22
-	.byte $22,$22,$22,$22,$FF,$00,$00,$00
-	.byte $00,$00,$00,$00,$FF,$22,$22,$22
-	.byte $22,$22,$22,$22,$EE,$22,$22,$22
-	.byte $88,$88,$88,$88,$88,$88,$88,$88
-	.byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
-	.byte $33,$33,$33,$33,$33,$33,$33,$33
-	.byte $FF,$FF,$00,$00,$00,$00,$00,$00
-	.byte $FF,$FF,$FF,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$FF,$FF,$FF
-	.byte $00,$00,$00,$00,$11,$AA,$44,$00
-	.byte $00,$00,$00,$00,$CC,$CC,$CC,$CC
-	.byte $33,$33,$33,$33,$00,$00,$00,$00
-	.byte $22,$22,$22,$22,$EE,$00,$00,$00
-	.byte $CC,$CC,$CC,$CC,$00,$00,$00,$00
-	.byte $CC,$CC,$CC,$CC,$33,$33,$33,$33
+; garbage
+	.res 30, $ea
+	.byte "MODIFIED FOR      CP/M     B"
+	.byte $5B,$FF,$FF,$FF,$D0
+	.res 7, $FF
+	.res 34, $DF
+	.byte $DC
+	.res 68, $DF
+	.res 96, $EA
+
+bgcolor:
+	.byte $F0
+pntr2:
+	.byte $EA
+; unused
+	.byte $EA
+unused:
+	.byte 0
+rvs_mask:
+	.byte $FF
+color2:
+	.byte 0
+is_text:
+	.byte 0
+
+; unused
+	.res 10, $EA
