@@ -1,10 +1,10 @@
 ;
 ; 80COLUMNS.PRG
 ;
-; Original author unknown, reverse-engineered by Michael Steil
+; * Original author unknown
+; * Fast scrolling by Ilker Ficicilar
+; * Reverse-engineered by Michael Steil
 ;
-
-fast_scrolling = 1
 
 ; KERNAL defines
 R6510  = $01
@@ -56,10 +56,6 @@ LINES   = 25
 .segment "CODE"
 
 start:
-	jsr setup
-	jmp ($A000) ; BASIC warm start
-
-setup:
 	jsr MODE_enable ; allow switching charsets
 	lda #0
 	sta QTSW
@@ -73,9 +69,9 @@ setup:
 	sta $DD00
 	jsr cmd_graphics ; upper case
 	sei
-	lda #<_new_cinv
+	lda #<new_cinv
 	sta CINV
-	lda #>_new_cinv
+	lda #>new_cinv
 	sta CINV + 1
 	lda #<new_basin
 	sta IBASIN
@@ -85,16 +81,14 @@ setup:
 	sta IBSOUT
 	lda #>new_bsout
 	sta IBSOUT + 1
-	lda #0
-	sta unused
 	lda COLOR
-	sta $D020
-	sta $D021
+	asl
+	asl
+	asl
+	asl
+	sta COLOR
 	cli
-	rts
-
-	nop
-	nop
+	jmp ($A000) ; BASIC warm start
 
 new_bsout:
 	pha
@@ -587,28 +581,108 @@ scroll_up:
 	lda PNT + 1
 	cmp #200
 	bcc :-
-.ifdef fast_scrolling
-	jsr scroll_up_patch
-.else
-	ldy #<(BITMAP + 320)
-	lda #>(BITMAP + 320)
-	sty bitmap_ptr
-	sta bitmap_ptr + 1
-	ldy #<BITMAP
-	lda #>BITMAP
-	sty tmp_ptr
-	sta tmp_ptr + 1
-:	lda (bitmap_ptr),y
-	sta (tmp_ptr),y
+	ldy #0
+:	lda $e140,y
+	sta $e000,y
+	lda $e1e0,y
+	sta $e0a0,y
+	lda $e280,y
+	sta $e140,y
+	lda $e320,y
+	sta $e1e0,y
+	lda $e3c0,y
+	sta $e280,y
+	lda $e460,y
+	sta $e320,y
+	lda $e500,y
+	sta $e3c0,y
+	lda $e5a0,y
+	sta $e460,y
+	lda $e640,y
+	sta $e500,y
+	lda $e6e0,y
+	sta $e5a0,y
+	lda $e780,y
+	sta $e640,y
+	lda $e820,y
+	sta $e6e0,y
+	lda $e8c0,y
+	sta $e780,y
+	lda $e960,y
+	sta $e820,y
+	lda $ea00,y
+	sta $e8c0,y
+	lda $eaa0,y
+	sta $e960,y
+	lda $eb40,y
+	sta $ea00,y
+	lda $ebe0,y
+	sta $eaa0,y
+	lda $ec80,y
+	sta $eb40,y
+	lda $ed20,y
+	sta $ebe0,y
+	lda $edc0,y
+	sta $ec80,y
+	lda $ee60,y
+	sta $ed20,y
+	lda $ef00,y
+	sta $edc0,y
+	lda $efa0,y
+	sta $ee60,y
+	lda $f040,y
+	sta $ef00,y
+	lda $f0e0,y
+	sta $efa0,y
+	lda $f180,y
+	sta $f040,y
+	lda $f220,y
+	sta $f0e0,y
+	lda $f2c0,y
+	sta $f180,y
+	lda $f360,y
+	sta $f220,y
+	lda $f400,y
+	sta $f2c0,y
+	lda $f4a0,y
+	sta $f360,y
+	lda $f540,y
+	sta $f400,y
+	lda $f5e0,y
+	sta $f4a0,y
+	lda $f680,y
+	sta $f540,y
+	lda $f720,y
+	sta $f5e0,y
+	lda $f7c0,y
+	sta $f680,y
+	lda $f860,y
+	sta $f720,y
+	lda $f900,y
+	sta $f7c0,y
+	lda $f9a0,y
+	sta $f860,y
+	lda $fa40,y
+	sta $f900,y
+	lda $fae0,y
+	sta $f9a0,y
+	lda $fb80,y
+	sta $fa40,y
+	lda $fc20,y
+	sta $fae0,y
+	lda $fcc0,y
+	sta $fb80,y
+	lda $fd60,y
+	sta $fc20,y
+	lda $fe00,y
+	sta $fcc0,y
+	lda $fea0,y
+	sta $fd60,y
 	iny
-	bne :-
-	inc bitmap_ptr + 1
-	inc tmp_ptr + 1
-	lda tmp_ptr + 1
-	cmp #>(BITMAP + 8000) - 1
-	bcc :-
-.endif
-	ldy #40
+	cpy #$a0
+	beq :+
+	jmp :-
+:	ldy #40
 	lda #>VICCOL
 	sty USER
 	sta USER + 1
@@ -637,8 +711,6 @@ scroll_up:
 	lda #4
 	sta BLNCT
 	rts
-
-	.res 27, $ea
 
 petscii_to_screencode:
 	cmp #$FF ; PI
@@ -834,9 +906,12 @@ new_basin:
 	pla
 	tay
 ; ***END*** almost identical to $E5E7 in KERNAL
-	jmp new_basin2
-
-	nop
+	lda DATA
+	cmp #$DE ; convert PI
+	bne :+
+	lda #$FF
+:	clc
+	rts
 
 new_cinv:
 	jsr $FFEA ; increment real time clock
@@ -871,7 +946,7 @@ new_cinv:
 @2:	lda bgcolor
 	and #$0F
 	cmp color2
-	beq new_cinv2
+	beq @5
 	sta color2
 	lda TBLX
 	pha
@@ -894,51 +969,46 @@ new_cinv:
 	lda GDCOL
 	and #$F0
 	ora color2
-	jmp new_cinv3
-
-_new_cinv:
-	jmp new_cinv
-
-; XXX unused?
-	jmp new_cinv + 3
-
-new_cinv2:
+	sta GDCOL
 	pla
+	sta TBLX
+	jsr calc_user
+@5:	pla
 	sta R6510
 	lda $D018
 	and #2
 	cmp is_text
-	beq @6
+	beq @a6
 	sta is_text
 	lda PNTR
 	pha
 	lda TBLX
 	pha
 	jsr cmd_home
-@1:	ldy PNTR
+@a1:	ldy PNTR
 	lda (PNT),y
 	and #$7F
 	cmp #$20
-	beq @3
-	bne @2
-	bcc @3
-@2:	lda (PNT),y
+	beq @a3
+	bne @a2
+	bcc @a3
+@a2:	lda (PNT),y
 	jsr _draw_char ; re-draw character
-@3:	lda PNTR
+@a3:	lda PNTR
 	cmp #COLUMNS - 1
-	bne @4
+	bne @a4
 	lda TBLX
 	cmp #LINES - 1
-	beq @5
-@4:	jsr move_csr_right
-	jmp @1
-@5:	pla
+	beq @a5
+@a4:	jsr move_csr_right
+	jmp @a1
+@a5:	pla
 	sta TBLX
 	pla
 	sta PNTR
 	jsr calc_pnt
 	jsr calc_user
-@6:	jmp $EA61
+@a6:	jmp $EA61
 
 .macro exec0 addr, save_y
 	php
@@ -972,159 +1042,13 @@ _draw_char:
 _scroll_up:
 	exec0 scroll_up
 
-; XXX these look like patches
-
-new_basin2:
-	lda DATA
-	cmp #$DE ; convert PI
-	bne :+
-	lda #$FF
-:	clc
-	rts
-
-new_cinv3:
-	sta GDCOL
-	pla
-	sta TBLX
-	jsr calc_user
-	jmp new_cinv2
-
-; garbage
-	.res 30, $ea
-	.byte "MODIFIED FOR      CP/M     B"
-	.byte $5B,$FF,$FF,$FF,$D0
-	.res 7, $FF
-	.res 34, $DF
-	.byte $DC
-	.res 68, $DF
-	.res 96, $EA
-
 bgcolor:
-	.byte $F0
+	.byte 0
 pntr2:
-	.byte $EA
-; unused
-	.byte $EA
-unused:
 	.byte 0
 rvs_mask:
-	.byte $FF
+	.byte 0
 color2:
 	.byte 0
 is_text:
 	.byte 0
-
-; unused
-	.res 10, $EA
-
-.ifdef fast_scrolling
-
-.segment "CODE2"
-
-; fast scrolling patch by Ilker Ficicilar
-; http://cbm.ficicilar.name.tr/uncorrected/basicv2/basv2.html
-
-scroll_up_patch:
-	ldy #0
-:	lda $e140,y
-	sta $e000,y
-	lda $e1e0,y
-	sta $e0a0,y
-	lda $e280,y
-	sta $e140,y
-	lda $e320,y
-	sta $e1e0,y
-	lda $e3c0,y
-	sta $e280,y
-	lda $e460,y
-	sta $e320,y
-	lda $e500,y
-	sta $e3c0,y
-	lda $e5a0,y
-	sta $e460,y
-	lda $e640,y
-	sta $e500,y
-	lda $e6e0,y
-	sta $e5a0,y
-	lda $e780,y
-	sta $e640,y
-	lda $e820,y
-	sta $e6e0,y
-	lda $e8c0,y
-	sta $e780,y
-	lda $e960,y
-	sta $e820,y
-	lda $ea00,y
-	sta $e8c0,y
-	lda $eaa0,y
-	sta $e960,y
-	lda $eb40,y
-	sta $ea00,y
-	lda $ebe0,y
-	sta $eaa0,y
-	lda $ec80,y
-	sta $eb40,y
-	lda $ed20,y
-	sta $ebe0,y
-	lda $edc0,y
-	sta $ec80,y
-	lda $ee60,y
-	sta $ed20,y
-	lda $ef00,y
-	sta $edc0,y
-	lda $efa0,y
-	sta $ee60,y
-	lda $f040,y
-	sta $ef00,y
-	lda $f0e0,y
-	sta $efa0,y
-	lda $f180,y
-	sta $f040,y
-	lda $f220,y
-	sta $f0e0,y
-	lda $f2c0,y
-	sta $f180,y
-	lda $f360,y
-	sta $f220,y
-	lda $f400,y
-	sta $f2c0,y
-	lda $f4a0,y
-	sta $f360,y
-	lda $f540,y
-	sta $f400,y
-	lda $f5e0,y
-	sta $f4a0,y
-	lda $f680,y
-	sta $f540,y
-	lda $f720,y
-	sta $f5e0,y
-	lda $f7c0,y
-	sta $f680,y
-	lda $f860,y
-	sta $f720,y
-	lda $f900,y
-	sta $f7c0,y
-	lda $f9a0,y
-	sta $f860,y
-	lda $fa40,y
-	sta $f900,y
-	lda $fae0,y
-	sta $f9a0,y
-	lda $fb80,y
-	sta $fa40,y
-	lda $fc20,y
-	sta $fae0,y
-	lda $fcc0,y
-	sta $fb80,y
-	lda $fd60,y
-	sta $fc20,y
-	lda $fe00,y
-	sta $fcc0,y
-	lda $fea0,y
-	sta $fd60,y
-	iny
-	cpy #$a0
-	beq :+
-	jmp :-
-:	rts
-.endif
