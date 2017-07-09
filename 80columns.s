@@ -3,7 +3,7 @@
 ;
 ; * Original author unknown
 ; * Fast scrolling by Ilker Ficicilar
-; * Reverse-engineered by Michael Steil
+; * Reverse-engineered and improved by Michael Steil
 ;
 
 ; KERNAL defines
@@ -220,7 +220,7 @@ code_table:
 	ADDR rts0
 	ADDR rts0
 	ADDR rts0
-	ADDR cmd_lf          ; $8D: LF
+	ADDR cmd_cr          ; $8D: LF
 	ADDR cmd_graphics    ; $8E: GRAPHICS
 	ADDR rts0
 	ADDR set_col_black   ; $90: BLACK
@@ -314,7 +314,7 @@ cmd_cr:
 	sta PNTR
 	sta INSRT
 	sta QTSW
-	jsr set_rvs_off
+	sta RVS
 move_csr_down:
 	inc TBLX
 	lda TBLX
@@ -322,8 +322,7 @@ move_csr_down:
 	bne :+
 	dec TBLX
 	jsr _scroll_up
-:	jsr calc_pnt
-	jmp calc_user
+:	jmp calc_pnt_user
 
 cmd_text:
 	lda $D018
@@ -349,6 +348,7 @@ cmd_home:
 	lda #0
 	sta PNTR
 	sta TBLX
+calc_pnt_user:
 	jsr calc_pnt
 	jmp calc_user
 
@@ -387,15 +387,11 @@ move_csr_right:
 	jmp move_csr_down
 :	rts
 
-cmd_lf:
-	jmp cmd_cr
-
 move_csr_up:
 	lda TBLX
 	beq :+
 	dec TBLX
-:	jsr calc_pnt
-	jmp calc_user
+:	jmp calc_pnt_user
 
 cmd_clr:
 	lda #LINES - 1
