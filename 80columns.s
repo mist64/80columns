@@ -153,8 +153,7 @@ bsout_core:
 @5:	ora #$80
 	ldx COLOR
 	jsr _draw_char_with_col
-	jsr move_csr_right
-	rts
+	jmp move_csr_right
 ; interpret special character
 @6:	txa
 	bpl @7
@@ -234,15 +233,68 @@ code_table:
 	.addr set_col_yellow  ; $9E: YELLOW
 	.addr set_col_cyan    ; $9F: CYAN
 
+set_col_black:
+	lda #0
+	.byte $2c
 set_col_white:
 	lda #1
-	jmp set_col
+	.byte $2c
+set_col_red:
+	lda #2
+	.byte $2c
+set_col_cyan:
+	lda #3
+	.byte $2c
+set_col_purple:
+	lda #4
+	.byte $2c
+set_col_green:
+	lda #5
+	.byte $2c
+set_col_blue:
+	lda #6
+	.byte $2c
+set_col_yellow:
+	lda #7
+	.byte $2c
+set_col_orange:
+	lda #8
+	.byte $2c
+set_col_brown:
+	lda #9
+	.byte $2c
+set_col_ltred:
+	lda #$0A
+	.byte $2c
+set_col_dkgray:
+	lda #$0B
+	.byte $2c
+set_col_gray:
+	lda #$0C
+	.byte $2c
+set_col_ltgreen:
+	lda #$0D
+	.byte $2c
+set_col_ltblue:
+	lda #$0E
+	.byte $2c
+set_col_ltgray:
+	lda #$0F
+set_col:
+	asl a
+	asl a
+	asl a
+	asl a
+	sta COLOR
+	lda bgcolor
+	and #$0F
+	ora COLOR
+	sta COLOR
+	rts
 
 MODE_disable:
 	lda #$80
-	sta MODE
-	rts
-
+	.byte $2c
 MODE_enable:
 	lda #0
 	sta MODE
@@ -254,14 +306,6 @@ cmd_cr:
 	sta INSRT
 	sta QTSW
 	jsr set_rvs_off
-	jmp move_csr_down
-
-cmd_text:
-	lda $D018
-	ora #2
-	sta $D018
-	rts
-
 move_csr_down:
 	inc TBLX
 	lda TBLX
@@ -270,11 +314,25 @@ move_csr_down:
 	dec TBLX
 	jsr _scroll_up
 :	jsr calc_pnt
-	jsr calc_user
+	jmp calc_user
+
+cmd_text:
+	lda $D018
+	ora #2
+	bne store_d018
+
+cmd_graphics:
+	lda $D018
+	and #<~2
+store_d018:
+	sta $D018
 	rts
 
 set_rvs_on:
 	lda #$80
+	.byte $2c
+set_rvs_off:
+	lda #0
 	sta RVS
 	rts
 
@@ -283,8 +341,7 @@ cmd_home:
 	sta PNTR
 	sta TBLX
 	jsr calc_pnt
-	jsr calc_user
-	rts
+	jmp calc_user
 
 cmd_del:
 	lda PNTR
@@ -310,9 +367,6 @@ cmd_del:
 	dec PNTR
 	rts
 
-set_col_red:
-	lda #2
-	jmp set_col
 
 move_csr_right:
 	inc PNTR
@@ -321,46 +375,19 @@ move_csr_right:
 	bne :+
 	lda #0
 	sta PNTR
-	jsr move_csr_down
+	jmp move_csr_down
 :	rts
 
-set_col_green:
-	lda #5
-	jmp set_col
-
-set_col_blue:
-	lda #6
-	jmp set_col
-
-set_col_orange:
-	lda #8
-	jmp set_col
 
 cmd_lf:
 	jmp cmd_cr
-
-cmd_graphics:
-	lda $D018
-	and #<~2
-	sta $D018
-	rts
-
-set_col_black:
-	lda #0
-	jmp set_col
 
 move_csr_up:
 	lda TBLX
 	beq :+
 	dec TBLX
 :	jsr calc_pnt
-	jsr calc_user
-	rts
-
-set_rvs_off:
-	lda #0
-	sta RVS
-	rts
+	jmp calc_user
 
 cmd_clr:
 	lda #LINES - 1
@@ -427,38 +454,6 @@ cmd_inst:
 	inc INSRT
 @3:	rts
 
-set_col_brown:
-	lda #9
-	jmp set_col
-
-set_col_ltred:
-	lda #$0A
-	jmp set_col
-
-set_col_dkgray:
-	lda #$0B
-	jmp set_col
-
-set_col_gray:
-	lda #$0C
-	jmp set_col
-
-set_col_ltgreen:
-	lda #$0D
-	jmp set_col
-
-set_col_ltblue:
-	lda #$0E
-	jmp set_col
-
-set_col_ltgray:
-	lda #$0F
-	jmp set_col
-
-set_col_purple:
-	lda #4
-	jmp set_col
-
 move_csr_left:
 	dec PNTR
 	bpl @2
@@ -469,27 +464,8 @@ move_csr_left:
 @1:	sta PNTR
 @2:	rts
 
-set_col_yellow:
-	lda #7
-	jmp set_col
-
-set_col_cyan:
-	lda #3
-	jmp set_col
 
 rts0:	rts
-
-set_col:
-	asl a
-	asl a
-	asl a
-	asl a
-	sta COLOR
-	lda bgcolor
-	and #$0F
-	ora COLOR
-	sta COLOR
-	rts
 
 calc_user:
 	lda TBLX
@@ -735,8 +711,7 @@ tab2:	.byte $60,$40,$60,$40,$00,$20
 draw_char_with_col:
 	stx DATA
 	jsr draw_char
-	jsr set_viccol
-	rts
+	jmp set_viccol
 
 draw_char:
 	ldy PNTR
