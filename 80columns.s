@@ -415,13 +415,7 @@ move_csr_left:
 @1:	sta PNTR
 @2:	rts
 
-; XXX behavioral difference: will do nothing if there is
-; XXX a non-space at the very right
 cmd_inst:
-	ldy #COLUMNS - 1
-	lda (PNT),y
-	cmp #' '
-	bne @3
 	lda PNTR
 	sta pntr2
 	lda #COLUMNS - 1
@@ -439,7 +433,7 @@ cmd_inst:
 	ldx COLOR
 	jsr _draw_char_with_col
 	inc INSRT
-@3:	rts
+	rts
 
 clr_curline:
 	jsr calc_pnt
