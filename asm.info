@@ -1,6 +1,8 @@
 GLOBAL {
-    OUTPUTNAME      "80columns.s";
+    OUTPUTNAME      "80columns-orig.s";
     INPUTNAME       "80columns-c800.bin";
+#    OUTPUTNAME      "80columns-ilker.s";
+#    INPUTNAME       "80columns-c800-ilker.bin";
     STARTADDR       $c800;
     PAGELENGTH      0;                  # No paging
     CPU             "6502";

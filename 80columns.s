@@ -4,6 +4,8 @@
 ; Original author unknown, reverse-engineered by Michael Steil
 ;
 
+fast_scrolling = 1
+
 ; KERNAL defines
 R6510  = $01
 DFLTN  = $99   ; Default Input Device (0)
@@ -585,6 +587,9 @@ scroll_up:
 	lda PNT + 1
 	cmp #200
 	bcc :-
+.ifdef fast_scrolling
+	jsr scroll_up_patch
+.else
 	ldy #<(BITMAP + 320)
 	lda #>(BITMAP + 320)
 	sty bitmap_ptr
@@ -602,6 +607,7 @@ scroll_up:
 	lda tmp_ptr + 1
 	cmp #>(BITMAP + 8000) - 1
 	bcc :-
+.endif
 	ldy #40
 	lda #>VICCOL
 	sty USER
@@ -1010,3 +1016,115 @@ is_text:
 
 ; unused
 	.res 10, $EA
+
+.ifdef fast_scrolling
+
+.segment "CODE2"
+
+; fast scrolling patch by Ilker Ficicilar
+; http://cbm.ficicilar.name.tr/uncorrected/basicv2/basv2.html
+
+scroll_up_patch:
+	ldy #0
+:	lda $e140,y
+	sta $e000,y
+	lda $e1e0,y
+	sta $e0a0,y
+	lda $e280,y
+	sta $e140,y
+	lda $e320,y
+	sta $e1e0,y
+	lda $e3c0,y
+	sta $e280,y
+	lda $e460,y
+	sta $e320,y
+	lda $e500,y
+	sta $e3c0,y
+	lda $e5a0,y
+	sta $e460,y
+	lda $e640,y
+	sta $e500,y
+	lda $e6e0,y
+	sta $e5a0,y
+	lda $e780,y
+	sta $e640,y
+	lda $e820,y
+	sta $e6e0,y
+	lda $e8c0,y
+	sta $e780,y
+	lda $e960,y
+	sta $e820,y
+	lda $ea00,y
+	sta $e8c0,y
+	lda $eaa0,y
+	sta $e960,y
+	lda $eb40,y
+	sta $ea00,y
+	lda $ebe0,y
+	sta $eaa0,y
+	lda $ec80,y
+	sta $eb40,y
+	lda $ed20,y
+	sta $ebe0,y
+	lda $edc0,y
+	sta $ec80,y
+	lda $ee60,y
+	sta $ed20,y
+	lda $ef00,y
+	sta $edc0,y
+	lda $efa0,y
+	sta $ee60,y
+	lda $f040,y
+	sta $ef00,y
+	lda $f0e0,y
+	sta $efa0,y
+	lda $f180,y
+	sta $f040,y
+	lda $f220,y
+	sta $f0e0,y
+	lda $f2c0,y
+	sta $f180,y
+	lda $f360,y
+	sta $f220,y
+	lda $f400,y
+	sta $f2c0,y
+	lda $f4a0,y
+	sta $f360,y
+	lda $f540,y
+	sta $f400,y
+	lda $f5e0,y
+	sta $f4a0,y
+	lda $f680,y
+	sta $f540,y
+	lda $f720,y
+	sta $f5e0,y
+	lda $f7c0,y
+	sta $f680,y
+	lda $f860,y
+	sta $f720,y
+	lda $f900,y
+	sta $f7c0,y
+	lda $f9a0,y
+	sta $f860,y
+	lda $fa40,y
+	sta $f900,y
+	lda $fae0,y
+	sta $f9a0,y
+	lda $fb80,y
+	sta $fa40,y
+	lda $fc20,y
+	sta $fae0,y
+	lda $fcc0,y
+	sta $fb80,y
+	lda $fd60,y
+	sta $fc20,y
+	lda $fe00,y
+	sta $fcc0,y
+	lda $fea0,y
+	sta $fd60,y
+	iny
+	cpy #$a0
+	beq :+
+	jmp :-
+:	rts
+.endif
