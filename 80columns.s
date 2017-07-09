@@ -387,7 +387,6 @@ move_csr_right:
 	jmp move_csr_down
 :	rts
 
-
 cmd_lf:
 	jmp cmd_cr
 
@@ -744,27 +743,30 @@ draw_char:
 	jsr calc_bitmap_ptr
 	lda PNTR
 	and #1
-	bne @4
-	ldy #7
-@3:	lda (bitmap_ptr),y
+	beq @3
+	jmp @4
+@3:	ldy #7
+	.repeat 8
+	lda (bitmap_ptr),y
 	and #$0F
-	sta (bitmap_ptr),y
+	sta tmp_ptr
 	lda (charset_ptr),y
 	eor rvs_mask
 	and #$F0
-	ora (bitmap_ptr),y
+	ora tmp_ptr
 	sta (bitmap_ptr),y
 	dey
-	bpl @3
+	.endrepeat
 	rts
 @4:	ldy #7
+	; not enough code segment space to unroll this one as well
 @5:	lda (bitmap_ptr),y
 	and #$F0
-	sta (bitmap_ptr),y
+	sta tmp_ptr
 	lda (charset_ptr),y
 	eor rvs_mask
 	and #$0F
-	ora (bitmap_ptr),y
+	ora tmp_ptr
 	sta (bitmap_ptr),y
 	dey
 	bpl @5
