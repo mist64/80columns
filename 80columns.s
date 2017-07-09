@@ -159,79 +159,88 @@ bsout_core:
 	bpl @7
 	sec
 	sbc #$E0 ; fold $80-$9F -> $20-$1F
-@7:	asl a
+@7:	and #$7f
 	tax
 	lda code_table,x
+	clc
+	adc #<rts0
 	sta USRCMD
-	lda code_table + 1,x
+	lda #>rts0
+	adc #0
 	sta USRCMD + 1
 	jmp (USRCMD)
 
+.macro ADDR addr
+	.byte addr - rts0
+.endmacro
+
 code_table:
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr set_col_white   ; $05: WHITE
-	.addr rts0
-	.addr rts0
-	.addr MODE_disable    ; $08: SHIFT DISABLE
-	.addr MODE_enable     ; $09: SHIFT ENABLE
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr cmd_cr          ; $0D: CR
-	.addr cmd_text        ; $0E: TEXT MODE
-	.addr rts0
-	.addr rts0
-	.addr move_csr_down   ; $11: CURSOR DOWN
-	.addr set_rvs_on      ; $12: REVERSE ON
-	.addr cmd_home        ; $13: HOME
-	.addr cmd_del         ; $14: DEL
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr set_col_red     ; $1C: RED
-	.addr move_csr_right  ; $1D: CURSOR RIGHT
-	.addr set_col_green   ; $1E: GREEN
-	.addr set_col_blue    ; $1F: BLUE
-	.addr rts0
-	.addr set_col_orange  ; $81: ORANGE
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr rts0
-	.addr cmd_lf          ; $8D: LF
-	.addr cmd_graphics    ; $8E: GRAPHICS
-	.addr rts0
-	.addr set_col_black   ; $90: BLACK
-	.addr move_csr_up     ; $91: CURSOR UP
-	.addr set_rvs_off     ; $92: REVERSE OFF
-	.addr cmd_clr         ; $93: CLR
-	.addr cmd_inst        ; $94: INSERT
-	.addr set_col_brown   ; $95: BROWN
-	.addr set_col_ltred   ; $96: LIGHT RED
-	.addr set_col_dkgray  ; $97: DARK GRAY
-	.addr set_col_gray    ; $98: MIDDLE GRAY
-	.addr set_col_ltgreen ; $99: LIGHT GREEN
-	.addr set_col_ltblue  ; $9A: LIGHT BLUE
-	.addr set_col_ltgray  ; $9B: LIGHT GRAY
-	.addr set_col_purple  ; $9C: PURPLE
-	.addr move_csr_left   ; $9D: CURSOR LEFT
-	.addr set_col_yellow  ; $9E: YELLOW
-	.addr set_col_cyan    ; $9F: CYAN
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR set_col_white   ; $05: WHITE
+	ADDR rts0
+	ADDR rts0
+	ADDR MODE_disable    ; $08: SHIFT DISABLE
+	ADDR MODE_enable     ; $09: SHIFT ENABLE
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR cmd_cr          ; $0D: CR
+	ADDR cmd_text        ; $0E: TEXT MODE
+	ADDR rts0
+	ADDR rts0
+	ADDR move_csr_down   ; $11: CURSOR DOWN
+	ADDR set_rvs_on      ; $12: REVERSE ON
+	ADDR cmd_home        ; $13: HOME
+	ADDR cmd_del         ; $14: DEL
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR set_col_red     ; $1C: RED
+	ADDR move_csr_right  ; $1D: CURSOR RIGHT
+	ADDR set_col_green   ; $1E: GREEN
+	ADDR set_col_blue    ; $1F: BLUE
+	ADDR rts0
+	ADDR set_col_orange  ; $81: ORANGE
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR rts0
+	ADDR cmd_lf          ; $8D: LF
+	ADDR cmd_graphics    ; $8E: GRAPHICS
+	ADDR rts0
+	ADDR set_col_black   ; $90: BLACK
+	ADDR move_csr_up     ; $91: CURSOR UP
+	ADDR set_rvs_off     ; $92: REVERSE OFF
+	ADDR cmd_clr         ; $93: CLR
+	ADDR cmd_inst        ; $94: INSERT
+	ADDR set_col_brown   ; $95: BROWN
+	ADDR set_col_ltred   ; $96: LIGHT RED
+	ADDR set_col_dkgray  ; $97: DARK GRAY
+	ADDR set_col_gray    ; $98: MIDDLE GRAY
+	ADDR set_col_ltgreen ; $99: LIGHT GREEN
+	ADDR set_col_ltblue  ; $9A: LIGHT BLUE
+	ADDR set_col_ltgray  ; $9B: LIGHT GRAY
+	ADDR set_col_purple  ; $9C: PURPLE
+	ADDR move_csr_left   ; $9D: CURSOR LEFT
+	ADDR set_col_yellow  ; $9E: YELLOW
+	ADDR set_col_cyan    ; $9F: CYAN
+
+rts0:	rts
 
 set_col_black:
 	lda #0
@@ -397,6 +406,42 @@ cmd_clr:
 	bpl :-
 	jmp cmd_home
 
+move_csr_left:
+	dec PNTR
+	bpl @2
+	lda TBLX
+	beq @1
+	jsr move_csr_up
+	lda #COLUMNS - 1
+@1:	sta PNTR
+@2:	rts
+
+; XXX behavioral difference: will do nothing if there is
+; XXX a non-space at the very right
+cmd_inst:
+	ldy #COLUMNS - 1
+	lda (PNT),y
+	cmp #' '
+	bne @3
+	lda PNTR
+	sta pntr2
+	lda #COLUMNS - 1
+	sta PNTR
+@1:	ldy PNTR
+	cpy pntr2
+	beq @2
+	dey
+	ldx COLOR
+	lda (PNT),y
+	jsr _draw_char_with_col
+	dec PNTR
+	jmp @1
+@2:	lda #' '
+	ldx COLOR
+	jsr _draw_char_with_col
+	inc INSRT
+@3:	rts
+
 clr_curline:
 	jsr calc_pnt
 	ldy #COLUMNS - 1
@@ -427,45 +472,6 @@ clr_curline:
 	sta (bitmap_ptr),y
 	bne :-
 	rts
-
-; XXX behavioral difference: will do nothing if there is
-; XXX a non-space at the very right
-cmd_inst:
-	ldy #COLUMNS - 1
-	lda (PNT),y
-	cmp #' '
-	bne @3
-	lda PNTR
-	sta pntr2
-	lda #COLUMNS - 1
-	sta PNTR
-@1:	ldy PNTR
-	cpy pntr2
-	beq @2
-	dey
-	ldx COLOR
-	lda (PNT),y
-	jsr _draw_char_with_col
-	dec PNTR
-	jmp @1
-@2:	lda #' '
-	ldx COLOR
-	jsr _draw_char_with_col
-	inc INSRT
-@3:	rts
-
-move_csr_left:
-	dec PNTR
-	bpl @2
-	lda TBLX
-	beq @1
-	jsr move_csr_up
-	lda #COLUMNS - 1
-@1:	sta PNTR
-@2:	rts
-
-
-rts0:	rts
 
 calc_user:
 	lda TBLX
