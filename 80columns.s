@@ -1,10 +1,8 @@
-;
 ; 80COLUMNS.PRG
 ;
 ; * Original author unknown
 ; * Fast scrolling by Ilker Ficicilar
 ; * Reverse-engineered and improved by Michael Steil
-;
 
 ; KERNAL defines
 R6510  = $01

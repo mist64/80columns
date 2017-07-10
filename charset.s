@@ -1,3 +1,6 @@
+; 80COLUMNS
+; author unknown
+
 .segment "CHARSET"
 
 .global charset
