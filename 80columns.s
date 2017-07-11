@@ -79,11 +79,13 @@ start:
 	sta IBSOUT
 	lda #>new_bsout
 	sta IBSOUT + 1
-	lda COLOR
+	lda $D021
 	asl
 	asl
 	asl
 	asl
+	sta bgcolor
+	ora COLOR
 	sta COLOR
 	cli
 	jmp ($A000) ; BASIC warm start
@@ -288,13 +290,8 @@ set_col_ltblue:
 set_col_ltgray:
 	lda #$0F
 set_col:
-	asl a
-	asl a
-	asl a
-	asl a
 	sta COLOR
 	lda bgcolor
-	and #$0F
 	ora COLOR
 	sta COLOR
 	rts
@@ -446,7 +443,7 @@ clr_curline:
 	sta PNTR
 	jsr calc_bitmap_ptr
 	ldy #160
-	lda #0
+	lda #$FF
 :	dey
 	sta (bitmap_ptr),y
 	bne :-
@@ -454,7 +451,7 @@ clr_curline:
 	sta PNTR
 	jsr calc_bitmap_ptr
 	ldy #160
-	lda #0
+	lda #$FF
 :	dey
 	sta (bitmap_ptr),y
 	bne :-
@@ -617,11 +614,11 @@ draw_char_with_col:
 draw_char:
 	ldy PNTR
 	sta (PNT),y
-	ldy #0
+	ldy #$FF
 	sty rvs_mask
 	cmp #0
 	bpl @1
-	ldy #$FF
+	ldy #0
 	sty rvs_mask
 	and #$7F
 @1:	ldy is_text
@@ -795,6 +792,10 @@ new_basin:
 new_cinv:
 	jsr $FFEA ; increment real time clock
 	lda $D021
+	asl
+	asl
+	asl
+	asl
 	sta bgcolor
 	lda R6510
 	pha
@@ -823,7 +824,6 @@ new_cinv:
 @1:	eor #$80
 	jsr _draw_char_with_col
 @2:	lda bgcolor
-	and #$0F
 	cmp color2
 	beq @5
 	sta color2
@@ -832,9 +832,9 @@ new_cinv:
 	lda #LINES - 1
 	sta TBLX
 @3:	jsr calc_user
-	ldy #$27
+	ldy #40 - 1
 @4:	lda (USER),y
-	and #$F0
+	and #$0F
 	ora color2
 	sta (USER),y
 	dey
@@ -842,11 +842,11 @@ new_cinv:
 	dec TBLX
 	bpl @3
 	lda COLOR
-	and #$F0
+	and #$0F
 	ora color2
 	sta COLOR
 	lda GDCOL
-	and #$F0
+	and #$0F
 	ora color2
 	sta GDCOL
 	pla
