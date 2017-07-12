@@ -91,14 +91,11 @@ start:
 	jmp ($A000) ; BASIC warm start
 
 new_bsout:
+	sta DATA
 	pha
 	lda DFLTO
 	cmp #3
-	beq :+
-	jmp $F1D5 ; original non-screen BSOUT
-:	pla
-	pha
-	sta DATA
+	bne :+
 	txa
 	pha
 	tya
@@ -109,10 +106,11 @@ new_bsout:
 	tay
 	pla
 	tax
-	pla
+	lda DATA
 	clc
 	cli
 	rts
+:	jmp $F1D5 ; original non-screen BSOUT
 
 bsout_core:
 	tax
@@ -124,27 +122,26 @@ bsout_core:
 	clc
 	adc RVS
 	ldx COLOR
-	jsr _draw_char_with_col
-	jsr move_csr_right
+	jsr draw_move
 	lda INSRT
 	beq @1
 	dec INSRT
 @1:	rts
 ; special character
 @2:	cpx #$0D ; CR
-	beq @6
+	beq :+
 	cpx #$8D ; LF
-	beq @6
+	beq :+
 	lda INSRT
 	beq @3
 	cpx #$94 ; INSERT
-	beq @6
+	beq :+
 	dec INSRT
-	jmp @4
+	bpl @4
 @3:	cpx #$14 ; DEL
-	beq @6
+	beq :+
 	lda QTSW
-	beq @6
+	beq :+
 ; quote or insert mode
 @4:	txa
 	bpl @5
@@ -152,22 +149,25 @@ bsout_core:
 	sbc #$40
 @5:	ora #$80
 	ldx COLOR
+draw_move:
 	jsr _draw_char_with_col
 	jmp move_csr_right
+
 ; interpret special character
-@6:	txa
-	bpl @7
+:	txa
+	bpl @1
 	sec
-	sbc #$E0 ; fold $80-$9F -> $20-$1F
-@7:	and #$7f
-	tax
-	lda code_table,x
+	sbc #$60 ; fold $80-$9F -> $20-$3F
+@1:	tay
+	lda code_table,y
 	clc
 	adc #<rts0
 	sta USRCMD
 	lda #>rts0
 	adc #0
 	sta USRCMD + 1
+	txa
+	asl
 	jmp (USRCMD)
 
 .macro ADDR addr
@@ -297,96 +297,60 @@ set_col:
 	rts
 
 MODE_disable:
-	lda #$80
-	.byte $2c
 MODE_enable:
 	lda #0
+	ror
+	eor #$80
 	sta MODE
 	rts
 
 cmd_cr:
 	lda #0
-	sta PNTR
 	sta INSRT
 	sta QTSW
 	sta RVS
+move_csr_down_pntr:
+	sta PNTR
 move_csr_down:
 	inc TBLX
 	lda TBLX
 	cmp #LINES
-	bne :+
+	bne calc_pnt_user
 	dec TBLX
 	jsr _scroll_up
-:	jmp calc_pnt_user
+	bne calc_pnt_user ;always
+
+move_csr_right:
+	inc PNTR
+	lda PNTR
+	sec
+	sbc #COLUMNS
+	beq move_csr_down_pntr
+	rts
 
 cmd_text:
-	lda $D018
-	ora #2
-	bne store_d018
-
 cmd_graphics:
 	lda $D018
 	and #<~2
+	bcs store_d018
+	ora #2
 store_d018:
 	sta $D018
 	rts
 
 set_rvs_on:
-	lda #$80
-	.byte $2c
 set_rvs_off:
 	lda #0
+	ror
+	eor #$80
 	sta RVS
 	rts
 
-cmd_home:
-	lda #0
-	sta PNTR
-	sta TBLX
-calc_pnt_user:
-	jsr calc_pnt
-	jmp calc_user
-
-cmd_del:
-	lda PNTR
-	bne @1
-	jmp move_csr_left
-@1:	pha
-@2:	ldy PNTR
-	ldx COLOR
-	lda (PNT),y
-	dec PNTR
-	jsr _draw_char_with_col
-	inc PNTR
-	inc PNTR
-	lda PNTR
-	cmp #COLUMNS
-	bne @2
-	dec PNTR
-	lda #' '
-	ldx COLOR
-	jsr _draw_char_with_col
-	pla
-	sta PNTR
-	dec PNTR
-	rts
-
-
-move_csr_right:
-	inc PNTR
-	lda PNTR
-	cmp #COLUMNS
-	bne :+
-	lda #0
-	sta PNTR
-	jmp move_csr_down
-:	rts
-
 move_csr_up:
 	lda TBLX
-	beq :+
+	beq calc_pnt_user
 	dec TBLX
-:	jmp calc_pnt_user
+	bpl calc_pnt_user
 
 cmd_clr:
 	lda #LINES - 1
@@ -394,7 +358,44 @@ cmd_clr:
 :	jsr _clr_curline
 	dec TBLX
 	bpl :-
-	jmp cmd_home
+
+cmd_home:
+	lda #0
+	sta PNTR
+	sta TBLX
+calc_pnt_user:
+	jsr calc_pnt
+
+calc_user:
+	lda TBLX
+	asl a ;clear carry
+	tax
+	lda mul_40_tab,x
+	sta USER
+	lda mul_40_tab + 1,x
+	adc #>VICCOL
+	sta USER + 1
+	rts
+
+cmd_del:
+	lda PNTR
+	beq move_csr_left
+	pha
+	dec PNTR
+@1:	lda #' '
+	ldy PNTR
+	cpy #COLUMNS - 1
+	php
+	beq @2
+	iny
+	lda (PNT),y
+@2:	ldx COLOR
+	jsr _draw_char_with_col
+	inc PNTR
+	plp
+	bne @1
+	pla
+	sta PNTR
 
 move_csr_left:
 	dec PNTR
@@ -409,20 +410,20 @@ move_csr_left:
 cmd_inst:
 	lda PNTR
 	sta pntr2
-	lda #COLUMNS - 1
+	lda #COLUMNS
 	sta PNTR
-@1:	ldy PNTR
+@1:	dec PNTR
+	lda #' '
+	ldy PNTR
 	cpy pntr2
+	php
 	beq @2
 	dey
-	ldx COLOR
 	lda (PNT),y
+@2:	ldx COLOR
 	jsr _draw_char_with_col
-	dec PNTR
-	jmp @1
-@2:	lda #' '
-	ldx COLOR
-	jsr _draw_char_with_col
+	plp
+	bne @1
 	inc INSRT
 	rts
 
@@ -434,39 +435,26 @@ clr_curline:
 	dey
 	bpl :-
 	jsr calc_user
-	ldy #40 - 1
+	ldy #40
+	sty PNTR
+	dey
 	lda COLOR
 :	sta (USER),y
 	dey
 	bpl :-
-	lda #40
-	sta PNTR
+	jsr calc_bitmap_ptr
+	tya
+	ldy #160
+:	dey
+	sta (bitmap_ptr),y
+	bne :-
+	sty PNTR
 	jsr calc_bitmap_ptr
 	ldy #160
 	lda #$FF
 :	dey
 	sta (bitmap_ptr),y
 	bne :-
-	lda #0
-	sta PNTR
-	jsr calc_bitmap_ptr
-	ldy #160
-	lda #$FF
-:	dey
-	sta (bitmap_ptr),y
-	bne :-
-	rts
-
-calc_user:
-	lda TBLX
-	asl a
-	tax
-	lda mul_40_tab,x
-	sta USER
-	lda mul_40_tab + 1,x
-	clc
-	adc #>VICCOL
-	sta USER + 1
 	rts
 
 mul_40_tab:
@@ -476,34 +464,29 @@ mul_40_tab:
 
 calc_bitmap_ptr:
 	lda TBLX
-	asl a
+	asl a ;clear carry
 	tax
 	lda PNTR
 	and #$FE
-	clc
 	adc mul_80_tab,x
 	sta bitmap_ptr
 	lda mul_80_tab + 1,x
 	adc #0
-	sta bitmap_ptr + 1
 	asl bitmap_ptr
-	rol bitmap_ptr + 1
+	rol
 	asl bitmap_ptr
-	rol bitmap_ptr + 1
-	lda #>BITMAP
-	clc
-	adc bitmap_ptr + 1
+	rol
+	adc #>BITMAP
 	sta bitmap_ptr + 1
 	rts
 
 calc_pnt:
 	lda TBLX
-	asl a
+	asl a ;clear carry
 	tax
 	lda mul_80_tab,x
 	sta PNT
 	lda mul_80_tab + 1,x
-	clc
 	adc #>VICSCN
 	sta PNT + 1
 	rts
@@ -521,6 +504,7 @@ scroll_up:
 ; delay if CBM pressed
 	lda SHFLAG
 	and #4
+	tay
 	beq @2
 ; ***START*** identical to $E94B in KERNAL
 	ldy #0
@@ -531,11 +515,10 @@ scroll_up:
 	bne @1
 ; ***END*** identical to $E94B in KERNAL
 ; scroll screen up
-@2:	ldy #COLUMNS
+@2:	lda #COLUMNS
+	sta PNT
 	lda #>VICSCN
-	sty PNT
 	sta PNT + 1
-	ldy #0
 	sty tmp_ptr
 	sta tmp_ptr + 1
 :	lda (PNT),y
@@ -547,7 +530,6 @@ scroll_up:
 	lda PNT + 1
 	cmp #200
 	bcc :-
-	ldy #0
 :	.repeat 48, i
 	lda BITMAP + i * 160 + 320,y
 	sta BITMAP + i * 160,y
@@ -592,15 +574,14 @@ petscii_to_screencode:
 	lda #$7E ; screencode for PI
 @1:	pha
 	and #$E0
-	ldx #5
-@2:	cmp tab1,x
+	ldx #6
+@2:	cmp tab1-1,x
 	beq @3
 	dex
-	bpl @2
-	ldx #0
+	bne @2
 @3:	pla
 	and #$1F
-	ora tab2,x
+	ora tab2-1,x
 	rts
 
 tab1:	.byte $E0,$C0,$A0,$60,$40,$20
@@ -609,61 +590,6 @@ tab2:	.byte $60,$40,$60,$40,$00,$20
 draw_char_with_col:
 	stx DATA
 	jsr draw_char
-	jmp set_viccol
-
-draw_char:
-	ldy PNTR
-	sta (PNT),y
-	ldy #$FF
-	sty rvs_mask
-	cmp #0
-	bpl @1
-	ldy #0
-	sty rvs_mask
-	and #$7F
-@1:	ldy is_text
-	beq @2
-	ora #$80
-@2:	sta charset_ptr
-	lda #(>charset) >> 3
-	sta charset_ptr + 1
-	asl charset_ptr
-	rol charset_ptr + 1
-	asl charset_ptr
-	rol charset_ptr + 1
-	asl charset_ptr
-	rol charset_ptr + 1
-	jsr calc_bitmap_ptr
-	lda PNTR
-	and #1
-	beq @3
-	jmp @4
-@3:	ldy #7
-	.repeat 8
-	lda (bitmap_ptr),y
-	and #$0F
-	sta tmp_ptr
-	lda (charset_ptr),y
-	eor rvs_mask
-	and #$F0
-	ora tmp_ptr
-	sta (bitmap_ptr),y
-	dey
-	.endrepeat
-	rts
-@4:	ldy #7
-	; not enough code segment space to unroll this one as well
-@5:	lda (bitmap_ptr),y
-	and #$F0
-	sta tmp_ptr
-	lda (charset_ptr),y
-	eor rvs_mask
-	and #$0F
-	ora tmp_ptr
-	sta (bitmap_ptr),y
-	dey
-	bpl @5
-	rts
 
 set_viccol:
 	lda PNTR
@@ -671,6 +597,53 @@ set_viccol:
 	tay
 	lda DATA
 	sta (USER),y
+	rts
+
+draw_char:
+	ldy PNTR
+	sta (PNT),y
+	ldy #$FF
+	asl
+	bcc @1
+	clc
+	iny
+@1:	sty rvs_mask
+	ldy is_text
+	beq @2
+	sec
+@2:	sta charset_ptr
+	lda #(>charset) >> 3
+	rol
+	asl charset_ptr
+	rol
+	asl charset_ptr
+	rol
+	sta charset_ptr + 1
+	jsr calc_bitmap_ptr
+	lda PNTR
+	and #1
+	bne @3
+	ldy #7
+	.repeat 8
+	lda (charset_ptr),y
+	eor rvs_mask
+	eor (bitmap_ptr),y
+	and #$F0
+	eor (bitmap_ptr),y
+	sta (bitmap_ptr),y
+	dey
+	.endrepeat
+	rts
+@3:	ldy #7
+	.repeat 8
+	lda (charset_ptr),y
+	eor rvs_mask
+	eor (bitmap_ptr),y
+	and #$0F
+	eor (bitmap_ptr),y
+	sta (bitmap_ptr),y
+	dey
+	.endrepeat
 	rts
 
 new_basin:
@@ -681,15 +654,7 @@ new_basin:
 	sta LXSP + 1
 	lda TBLX
 	sta LXSP
-	jmp @10
-@1:	cmp #3
-	bne @2
-	sta CRSW
-	lda LNMX
-	sta INDX
-	jmp @10
-@2:	jmp $F173 ; part of BASIN
-; ***END*** almost identical to $F157 in KERNAL
+	bpl @10 ;always
 
 @3:	jsr bsout_core
 @4:	lda NDX
@@ -733,15 +698,21 @@ new_basin:
 	sty QTSW
 	lda LXSP
 	bmi @11
-	ldx TBLX
 ; ***DIFFERENCE*** missing JSR
-	cpx LXSP
+	cmp TBLX
 	bne @11
 	lda LXSP + 1
 	sta PNTR
 	cmp INDX
 	bcc @11
 	bcs @15
+
+@1:	cmp #3
+	bne @2
+	sta CRSW
+	lda LNMX
+	sta INDX
+
 @10:	tya
 	pha
 	txa
@@ -788,6 +759,9 @@ new_basin:
 	lda #$FF
 :	clc
 	rts
+
+@2:	jmp $F173 ; part of BASIN
+; ***END*** almost identical to $F157 in KERNAL
 
 new_cinv:
 	jsr $FFEA ; increment real time clock
@@ -869,8 +843,6 @@ new_cinv:
 	and #$7F
 	cmp #$20
 	beq @a3
-	bne @a2
-	bcc @a3
 @a2:	lda (PNT),y
 	jsr _draw_char ; re-draw character
 @a3:	lda PNTR
@@ -880,7 +852,7 @@ new_cinv:
 	cmp #LINES - 1
 	beq @a5
 @a4:	jsr move_csr_right
-	jmp @a1
+	bne @a1 ;always
 @a5:	pla
 	sta TBLX
 	pla
