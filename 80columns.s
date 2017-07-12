@@ -63,9 +63,8 @@ start:
 	sta $D011
 	lda #$68
 	sta $D018
-	lda #$90 ; VIC bank $C000-$FFFF
+	lda #$90 ; VIC bank $C000-$FFFF, bit 7 is important for cmd_graphics
 	sta $DD00
-	sec
 	jsr cmd_graphics ; upper case
 	sei
 	lda #<new_cinv
@@ -332,6 +331,7 @@ move_csr_right:
 
 cmd_text:
 cmd_graphics:
+	asl
 	lda $D018
 	and #<~2
 	bcs store_d018
