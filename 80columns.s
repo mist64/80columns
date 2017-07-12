@@ -106,7 +106,7 @@ new_bsout:
 	tay
 	pla
 	tax
-	lda DATA
+	pla
 	clc
 	cli
 	rts
@@ -129,19 +129,19 @@ bsout_core:
 @1:	rts
 ; special character
 @2:	cpx #$0D ; CR
-	beq :+
+	beq special_char
 	cpx #$8D ; LF
-	beq :+
+	beq special_char
 	lda INSRT
 	beq @3
 	cpx #$94 ; INSERT
-	beq :+
+	beq special_char
 	dec INSRT
 	bpl @4
 @3:	cpx #$14 ; DEL
-	beq :+
+	beq special_char
 	lda QTSW
-	beq :+
+	beq special_char
 ; quote or insert mode
 @4:	txa
 	bpl @5
@@ -154,7 +154,8 @@ draw_move:
 	jmp move_csr_right
 
 ; interpret special character
-:	txa
+special_char:
+	txa
 	bpl @1
 	sec
 	sbc #$60 ; fold $80-$9F -> $20-$3F
@@ -167,7 +168,6 @@ draw_move:
 	adc #0
 	sta USRCMD + 1
 	txa
-	asl
 	jmp (USRCMD)
 
 .macro ADDR addr
@@ -298,6 +298,7 @@ set_col:
 
 MODE_disable:
 MODE_enable:
+	lsr
 	lda #0
 	ror
 	eor #$80
@@ -317,7 +318,7 @@ move_csr_down:
 	cmp #LINES
 	bne calc_pnt_user
 	dec TBLX
-	jsr _scroll_up
+	jsr _scroll_up ;returns Z clear
 	bne calc_pnt_user ;always
 
 move_csr_right:
@@ -326,7 +327,7 @@ move_csr_right:
 	sec
 	sbc #COLUMNS
 	beq move_csr_down_pntr
-	rts
+	rts ;returns Z clear
 
 cmd_text:
 cmd_graphics:
@@ -340,6 +341,7 @@ store_d018:
 
 set_rvs_on:
 set_rvs_off:
+	asl
 	lda #0
 	ror
 	eor #$80
@@ -350,7 +352,7 @@ move_csr_up:
 	lda TBLX
 	beq calc_pnt_user
 	dec TBLX
-	bpl calc_pnt_user
+	bpl calc_pnt_user ;always
 
 cmd_clr:
 	lda #LINES - 1
@@ -375,7 +377,7 @@ calc_user:
 	lda mul_40_tab + 1,x
 	adc #>VICCOL
 	sta USER + 1
-	rts
+	rts ;returns Z clear because of LDA
 
 cmd_del:
 	lda PNTR
@@ -566,7 +568,7 @@ scroll_up:
 	sta PNTR
 	lda #4
 	sta BLNCT
-	rts
+	rts ;returns Z clear because of LDA
 
 petscii_to_screencode:
 	cmp #$FF ; PI
