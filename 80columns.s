@@ -65,6 +65,7 @@ start:
 	sta $D018
 	lda #$90 ; VIC bank $C000-$FFFF
 	sta $DD00
+	sec
 	jsr cmd_graphics ; upper case
 	sei
 	lda #<new_cinv
