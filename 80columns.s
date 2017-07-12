@@ -88,7 +88,7 @@ start:
 	ora COLOR
 	sta COLOR
 	cli
-	jmp ($A000) ; BASIC warm start
+	jmp ($A000) ; BASIC cold start
 
 new_bsout:
 	pha
@@ -111,7 +111,7 @@ new_bsout:
 	tax
 	pla
 	clc
-	cli
+	cli ; XXX user may have wanted interrupts off!
 	rts
 
 bsout_core:
@@ -370,7 +370,6 @@ cmd_del:
 	sta PNTR
 	dec PNTR
 	rts
-
 
 move_csr_right:
 	inc PNTR
@@ -729,6 +728,7 @@ new_basin:
 @9:	iny
 	sty INDX
 	ldy #0
+; ***DIFFERENCE*** missing STY $0292
 	sty PNTR
 	sty QTSW
 	lda LXSP
@@ -774,20 +774,20 @@ new_basin:
 	ldx DFLTO
 	cpx #3
 	beq @17
-@16:	jsr bsout_core ; ***DIFFERENCE***
+@16:	jsr bsout_core ; ***DIFFERENCE*** (JSR $E716)
 @17:	lda #$0D
 @18:	sta DATA
 	pla
 	tax
 	pla
 	tay
-; ***END*** almost identical to $E5E7 in KERNAL
 	lda DATA
 	cmp #$DE ; convert PI
 	bne :+
 	lda #$FF
 :	clc
 	rts
+; ***END*** almost identical to $E5E7 in KERNAL
 
 new_cinv:
 	jsr $FFEA ; increment real time clock
