@@ -7,4 +7,4 @@ all:
 	exomizer sfx 51200 -q -n -o 80columns-compressed.prg 80columns.prg
 
 clean:
-	rm *.prg *.bin *.o
+	rm -f *.prg *.bin *.o
