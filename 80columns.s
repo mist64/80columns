@@ -54,8 +54,8 @@ LINES   = 25
 .segment "CODE"
 
 start:
-	jsr MODE_enable ; allow switching charsets
-	lda #0
+	sec
+	jsr MODE_enable_i ; allow switching charsets, returns A=#$00
 	sta QTSW
 	sta INSRT ; disable quote and insert mode
 	jsr cmd_clr ; clear screen
@@ -88,7 +88,7 @@ start:
 	ora COLOR
 	sta COLOR
 	cli
-	jmp ($A000) ; BASIC warm start
+	jmp ($A000) ; BASIC cold start
 
 new_bsout:
 	sta DATA
@@ -108,7 +108,7 @@ new_bsout:
 	tax
 	pla
 	clc
-	cli
+	cli ; XXX user may have wanted interrupts off!
 	rts
 :	jmp $F1D5 ; original non-screen BSOUT
 
@@ -299,6 +299,7 @@ set_col:
 MODE_disable:
 MODE_enable:
 	lsr
+MODE_enable_i:
 	lda #0
 	ror
 	eor #$80
@@ -697,6 +698,7 @@ new_basin:
 @9:	iny
 	sty INDX
 	ldy #0
+; ***DIFFERENCE*** missing STY $0292
 	sty PNTR
 	sty QTSW
 	lda LXSP
@@ -748,20 +750,20 @@ new_basin:
 	ldx DFLTO
 	cpx #3
 	beq @17
-@16:	jsr bsout_core ; ***DIFFERENCE***
+@16:	jsr bsout_core ; ***DIFFERENCE*** (JSR $E716)
 @17:	lda #$0D
 @18:	sta DATA
 	pla
 	tax
 	pla
 	tay
-; ***END*** almost identical to $E5E7 in KERNAL
 	lda DATA
 	cmp #$DE ; convert PI
 	bne :+
 	lda #$FF
 :	clc
 	rts
+; ***END*** almost identical to $E5E7 in KERNAL
 
 @2:	jmp $F173 ; part of BASIN
 ; ***END*** almost identical to $F157 in KERNAL
