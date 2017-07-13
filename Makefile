@@ -1,11 +1,21 @@
 .PHONY: all
-all:
-	ca65 80columns.s
-	ca65 -o charset.o charset.s
-	ld65 -C 80columns.cfg 80columns.o charset.o -o 80columns.bin
-	printf "\0\310" > 80columns.prg
-	cat 80columns.bin >> 80columns.prg
-	exomizer sfx 51200 -q -n -o 80columns-compressed.prg 80columns.prg
+all: 80columns-compressed.prg 80c2-compressed.prg 80c3-compressed.prg 80c4-compressed.prg
+
+%-compressed.prg: %-uncompressed.prg
+	exomizer sfx 51200 -q -n -o $@ $<
+
+%-uncompressed.prg: %.bin
+	(printf '\0\310'; cat $<) > $@
+
+.INTERMEDIATE: 80columns.bin
+80columns.bin: 80columns.o charset.o 80columns.cfg
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@
+
+80c%.bin: 80columns.o charset%.o 80columns.cfg
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@
+
+%.o: %.s
+	ca65 -o $@ $<
 
 .PHONY: clean
 clean:
