@@ -1,0 +1,6 @@
+[submodule "cc65"]
+	path = cc65
+	url = https://github.com/cc65/cc65
+[submodule "exomizer"]
+	path = exomizer
+	url = https://github.com/bitshifters/exomizer

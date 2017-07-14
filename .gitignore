@@ -1,3 +1,4 @@
 *.o
 *.prg
 *.bin
+bin

@@ -1,3 +1,5 @@
+export PATH:= $(abspath bin):$(PATH)
+
 .PHONY: all
 all: 80columns-compressed.prg 80c2-compressed.prg 80c3-compressed.prg 80c4-compressed.prg
 all: charset.prg charset2.prg charset3.prg charset4.prg
@@ -58,3 +60,30 @@ update-font-images: charset.bin charset2.bin charset3.bin charset4.bin mkfontimg
 .PHONY: clean
 clean:
 	rm -f *.prg *.bin *.o 80columns.d64
+
+.PHONY: toolchain
+toolchain: toolchain-cc65 toolchain-exomizer
+
+.PHONY: toolchain-cc65
+toolchain-cc65:
+	[ -d cc65/src ] || git submodule update --init cc65
+
+	$(MAKE) -C cc65 CC=cc bin
+
+	mkdir -p bin
+
+	cp cc65/bin/ca65 bin/
+	cp cc65/bin/ld65 bin/
+
+.PHONY: toolchain-exomizer
+toolchain-exomizer:
+	[ -d exomizer/exomizer2/src ] || git submodule update --init exomizer
+
+	$(MAKE) -C exomizer/exomizer2/src CFLAGS="-Wall -Wstrict-prototypes -pedantic -O3"
+
+	mkdir -p bin
+
+	cp exomizer/exomizer2/src/exomizer bin/
+
+	# have to do this, or git will report untracked files
+	(cd exomizer && git clean -dxf)
