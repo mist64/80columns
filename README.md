@@ -19,6 +19,8 @@ Building requires a UNIX environment and [cc65](https://github.com/cc65/cc65) an
 
 The source contains four character sets (`charset.s`, `charset2.s` etc.) from different 80 column software solutions, which can be selected by changing the reference to the filename in the `Makefile`.
 
+You can also `LOAD`/`RUN` a new exomizer-compressed character set into memory, though this destroys the currently-loaded BASIC program.
+
 ### charset.s: 80COLUMNS
 ![](img/g1.png)![](img/t1.png)### charset2.s: COLOR 80 by Richvale Telecommunications![](img/g2.png)![](img/t2.png)### charset3.s: Highspeed80 by CKtwo![](img/g3.png)![](img/t3.png)### charset4.s: SCREEN-80 by Compute’s Gazette![](img/g4.png)![](img/t4.png)
 
