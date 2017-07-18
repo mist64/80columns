@@ -3,7 +3,10 @@ export PATH:= $(abspath bin):$(PATH)
 .PHONY: all
 all: 80columns-compressed.prg 80c2-compressed.prg 80c3-compressed.prg 80c4-compressed.prg
 all: charset.prg charset2.prg charset3.prg charset4.prg
+
+ifneq ($(shell which c1541 2>/dev/null),)
 all: 80columns.d64
+endif
 
 80columns.d64: 80columns-compressed.prg charset.prg charset2.prg charset3.prg charset4.prg
 	rm -f $@

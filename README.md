@@ -12,6 +12,7 @@ Building requires a UNIX environment and [cc65](https://github.com/cc65/cc65) an
 Running `make toolchain` will download and build cc65 and exomizer, assuming that you have a basic C development environment available.
 (If your system has packages of cc65 or exomizer, it is probably better to use those, e.g., with `brew install cc65 exomizer` on MacOS)
 Running `make` will produce `80columns-compressed.prg`, which is about 2.2 KB in size and can be started using `LOAD`/`RUN`.
+If the `c1541` program is available, it will also create a disk image `80columns.d64` containing the main program and the alternative fonts.
 
 ## Features
 
