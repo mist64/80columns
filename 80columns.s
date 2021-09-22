@@ -45,6 +45,61 @@ VICSCN = $C000 ; NEW Video Matrix: 25 Lines X 80 Columns
 VICCOL = $D800 ; new color RAM is in RAM at the same address
 BITMAP = $E000
 
+.ifndef USE_REU
+USE_REU = 0
+.endif
+
+.if USE_REU
+
+REU_STATUS      = $DF00                 ; Status register
+REU_COMMAND     = $DF01                 ; Command register
+REU_C64ADDR     = $DF02                 ; C64 base address register
+REU_REUADDR     = $DF04                 ; REU base address register
+REU_COUNT       = $DF07                 ; Transfer count register
+REU_IRQMASK     = $DF09                 ; IRQ mask register
+REU_CONTROL     = $DF0A                 ; Control register
+REU_TRIGGER     = $FF00                 ; REU command trigger
+
+OP_COPYFROM     = $ED
+OP_COPYTO       = $EC
+.macro REU_OP addr, len, op
+        lda R6510
+        pha
+        lda #%00110101
+        sta R6510
+        lda #0
+        sta $DF0A ; hold neither address
+        lda #<(addr)
+        sta REU_C64ADDR
+        lda #>(addr)
+        sta REU_C64ADDR+1
+
+
+        lda #<(len)
+        sta REU_COUNT
+        lda #>(len)
+        sta REU_COUNT+1
+
+        ldx #op
+        jsr reu_op
+        pla
+        sta R6510
+
+.endmacro
+
+.macro REU_COPYFROM addr, len
+        REU_OP addr, len, OP_COPYFROM
+.endmacro
+
+.macro REU_COPYTO addr, len
+        REU_OP addr, len, OP_COPYTO
+.endmacro
+
+.macro REU_MEMMOVE addr1, addr2, len
+        REU_COPYTO addr1, len
+        REU_COPYFROM addr2, len
+.endmacro
+.endif
 ; constants
 COLUMNS = 80
 LINES   = 25
@@ -517,9 +572,17 @@ scroll_up:
 	bne @1
 	dey
 	bne @1
+@2:
+        ; note that Y is now 0
 ; ***END*** identical to $E94B in KERNAL
 ; scroll screen up
-@2:	lda #COLUMNS
+.if USE_REU
+        ; move bitmap RAM (starting at BITMAP) up by 320 bytes
+        REU_MEMMOVE BITMAP+320, BITMAP, 24*40*8
+        ; move character RAM (starting at VICSCN) up by 80 bytes
+        REU_MEMMOVE VICSCN+80, VICSCN, 24*80
+.else
+	lda #COLUMNS
 	sta PNT
 	lda #>VICSCN
 	sta PNT + 1
@@ -542,7 +605,9 @@ scroll_up:
 	cpy #$a0
 	beq :+
 	jmp :-
-:	ldy #40
+:
+.endif
+	ldy #40
 	lda #>VICCOL
 	sty USER
 	sta USER + 1
@@ -571,7 +636,6 @@ scroll_up:
 	lda #4
 	sta BLNCT
 	rts ;returns Z clear because of LDA
-
 petscii_to_screencode:
 	cmp #$FF ; PI
 	bne @1
@@ -865,6 +929,21 @@ new_cinv:
 	jsr calc_pnt
 	jsr calc_user
 @a6:	jmp $EA61
+
+.if USE_REU
+reu_op:
+        lda #0
+        sta REU_REUADDR
+        sta REU_REUADDR+1
+        sta REU_REUADDR+2
+
+        stx REU_COMMAND
+
+        lda REU_TRIGGER
+        sta REU_TRIGGER
+
+        rts
+.endif
 
 .macro exec0 addr, save_y
 	php
