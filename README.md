@@ -32,6 +32,8 @@ You can also `LOAD`/`RUN` a new exomizer-compressed character set into memory, t
 
 The object code resides at $c800-$cfff. The two character sets are located at $d000-$d7ff. The virtual 80x25 Screen RAM (in order to read back screen contents) is at $c000-$c7ff. The bitmap is at $e000-$ff40, and the color matrix for bitmap mode is at $d800-$dbe8. All this lies beyond the top of BASIC RAM, so BASIC continues to have 38911 bytes free.
 
+The address range where the character sets reside is the normal location of special I/O registers (e.g., the VIC-II registers start at $d000). The normal LOAD command cannot load to this range of memory (instead there are random seeming side-effects such as blanking the screen), but the exomizer uncruncher can.
+
 ## TODO
 
 * Support LOCK and UNLOCK codes. (On the C64, these are 8 and 9, on the C128 they are 11 and 12...)
