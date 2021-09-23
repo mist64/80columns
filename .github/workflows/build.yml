@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  release:
+    types: [published]
+  check_suite:
+    types: [rerequested]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+
+    - name: install deps
+      run: sudo apt install vice
+
+    - name: build toolchain
+      run: make toolchain -j$(nproc)
+
+    - name: build 80columns
+      run: make -j$(nproc)
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: artifacts
+        path: |
+          *.d64
+          *.prg
