@@ -16,10 +16,11 @@ endif
 	done
 	mv -f 80columns.d64.tmp 80columns.d64
 
+EXOMIZER_SFX := exomizer sfx 51200 -q -n
 .INTERMEDIATE: charset.bin
 charset.prg: charset.bin
 	(printf '\0\320'; cat $<) > $@.tmp
-	exomizer sfx 51200 -q -n -o $@ $@.tmp
+	$(EXOMIZER_SFX) -o $@ $@.tmp
 	rm -f $@.tmp
 
 charset.bin: charset.o charset.cfg
@@ -27,14 +28,14 @@ charset.bin: charset.o charset.cfg
 
 charset%.prg: charset%.bin
 	(printf '\0\320'; cat $<) > $@.tmp
-	exomizer sfx 51200 -q -n -o $@ $@.tmp
+	$(EXOMIZER_SFX) -o $@ $@.tmp
 	rm -f $@.tmp
 
 charset%.bin: charset%.o charset.cfg
 	ld65 -C charset.cfg $< -o $@
 
 %-compressed.prg: %-uncompressed.prg
-	exomizer sfx 51200 -q -n -o $@ $<
+	$(EXOMIZER_SFX) -o $@ $<
 
 %-uncompressed.prg: %.bin
 	(printf '\0\310'; cat $<) > $@
