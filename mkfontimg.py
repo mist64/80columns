@@ -22,7 +22,7 @@ def toscreencode(ch):
     if '`' <= ch <= '~': return cc - 96
     return cc
 
-charset = map(ord, open(sys.argv[1]).read())
+charset = open(sys.argv[1], "rb").read()
 
 
 def putcat(img, r, c, code, lowercase):
@@ -35,7 +35,7 @@ def putcat(img, r, c, code, lowercase):
         for x in range(4):
             img.putpixel((4*c+x,8*r+y), data & (1<<(3-x)))
 
-img = Image.frombytes('1', (188,64), '\xff' * 188*64)
+img = Image.frombytes('1', (188,64), b'\xff' * 188*64)
 
 r=c=0
 for ch in text:
@@ -52,4 +52,5 @@ for r in range(8):
     for c in range(16):
         putcat(img, r, c+31, r*16+c, lowercase)
 
+img = img.resize((img.size[0]*3, img.size[1]*3))
 img.save(sys.argv[2])
