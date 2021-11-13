@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import sys
+import struct
 import PIL.Image as Image
 
 text = """\
@@ -25,6 +26,9 @@ def toscreencode(ch):
 charset = open(sys.argv[1], "rb").read()
 
 
+FG = 0xFFDE7886
+BG = 0xFFAA3A48
+
 def putcat(img, r, c, code, lowercase):
     inverse = code & 128
     code = code % 128
@@ -33,10 +37,19 @@ def putcat(img, r, c, code, lowercase):
         data = charset[idx+y+lowercase*1024]
         if not inverse: data = ~data
         for x in range(4):
-            img.putpixel((4*c+x,8*r+y), data & (1<<(3-x)))
+            if ~data & (1<<(3-x)):
+                img.putpixel((8+4*c+x,8+8*r+y), FG)
 
-img = Image.frombytes('1', (188,64), b'\xff' * 188*64)
+BG_buf = struct.pack('<I', BG)
+img = Image.frombytes('RGBA', (16+188,16+64), BG_buf * (16+188)*(16+64))
 
+for i in range(8):
+    for x in range(img.width):
+        img.putpixel((x, i), FG)
+        img.putpixel((x, img.height-i-1), FG)
+    for y in range(img.height):
+        img.putpixel((i, y), FG)
+        img.putpixel((img.width-i-1, y), FG)
 r=c=0
 for ch in text:
     if ch == '\n':
