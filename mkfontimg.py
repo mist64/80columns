@@ -65,5 +65,5 @@ for r in range(8):
     for c in range(16):
         putcat(img, r, c+31, r*16+c, lowercase)
 
-img = img.resize((img.size[0]*3, img.size[1]*3))
+img = img.resize((img.size[0]*3, img.size[1]*3), resample=Image.NEAREST)
 img.save(sys.argv[2])
