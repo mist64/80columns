@@ -16,10 +16,11 @@ endif
 	done
 	mv -f 80columns.d64.tmp 80columns.d64
 
+EXOMIZER_SFX := exomizer sfx 51200 -q -n -T4 -M256 -Di_perf=2
 .INTERMEDIATE: charset.bin
 charset.prg: charset.bin
 	(printf '\0\320'; cat $<) > $@.tmp
-	exomizer sfx 51200 -q -n -o $@ $@.tmp
+	$(EXOMIZER_SFX) -o $@ $@.tmp
 	rm -f $@.tmp
 
 charset.bin: charset.o charset.cfg
@@ -27,14 +28,14 @@ charset.bin: charset.o charset.cfg
 
 charset%.prg: charset%.bin
 	(printf '\0\320'; cat $<) > $@.tmp
-	exomizer sfx 51200 -q -n -o $@ $@.tmp
+	$(EXOMIZER_SFX) -o $@ $@.tmp
 	rm -f $@.tmp
 
 charset%.bin: charset%.o charset.cfg
 	ld65 -C charset.cfg $< -o $@
 
 %-compressed.prg: %-uncompressed.prg
-	exomizer sfx 51200 -q -n -o $@ $<
+	$(EXOMIZER_SFX) -o $@ $<
 
 %-uncompressed.prg: %.bin
 	(printf '\0\310'; cat $<) > $@
@@ -80,13 +81,13 @@ toolchain-cc65:
 
 .PHONY: toolchain-exomizer
 toolchain-exomizer:
-	[ -d exomizer/exomizer2/src ] || git submodule update --init exomizer
+	[ -d exomizer/src ] || git submodule update --init exomizer
 
-	$(MAKE) -C exomizer/exomizer2/src CFLAGS="-Wall -Wstrict-prototypes -pedantic -O3"
+	$(MAKE) -C exomizer/src CFLAGS="-Wall -Wstrict-prototypes -pedantic -O3"
 
 	mkdir -p bin
 
-	cp exomizer/exomizer2/src/exomizer bin/
+	cp exomizer/src/exomizer bin/
 
 	# have to do this, or git will report untracked files
 	(cd exomizer && git clean -dxf)
