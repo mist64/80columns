@@ -2,13 +2,14 @@ export PATH:= $(abspath bin):$(PATH)
 
 .PHONY: all
 all: 80columns-compressed.prg 80c2-compressed.prg 80c3-compressed.prg 80c4-compressed.prg
+all: 80colreu-compressed.prg 80r2-compressed.prg 80r3-compressed.prg 80r4-compressed.prg
 all: charset.prg charset2.prg charset3.prg charset4.prg
 
 ifneq ($(shell which c1541 2>/dev/null),)
 all: 80columns.d64
 endif
 
-80columns.d64: 80columns-compressed.prg charset.prg charset2.prg charset3.prg charset4.prg
+80columns.d64: 80colreu-compressed.prg 80columns-compressed.prg charset.prg charset2.prg charset3.prg charset4.prg
 	rm -f $@
 	c1541 -format 80columns,80 d64 80columns.d64.tmp
 	for i in $^; do \
@@ -51,19 +52,33 @@ update-font-images: charset.bin charset2.bin charset3.bin charset4.bin mkfontimg
 	python3 mkfontimg.py -l charset4.bin img/t4.png
 	python3 mkfontimg.py    charset4.bin img/g4.png
 
+.INTERMEDIATE: 80colreu.bin
+80colreu.bin: 80colreu.o charset.o 80columns.cfg
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@ --mapfile ${@:.bin=.map}
+
 .INTERMEDIATE: 80columns.bin
 80columns.bin: 80columns.o charset.o 80columns.cfg
-	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@ --mapfile ${@:.bin=.map}
+
+80r%.bin: 80colreu.o charset%.o 80columns.cfg
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@ --mapfile ${@:.bin=.map} --dbgfile ${@:.bin=.dbg}
 
 80c%.bin: 80columns.o charset%.o 80columns.cfg
-	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@ --mapfile ${@:.bin=.map} --dbgfile ${@:.bin=.dbg}
+
+80r%.bin: 80colreu.o charset%.o 80columns.cfg
+	ld65 -C 80columns.cfg $(filter %.o,$^) -o $@ --mapfile ${@:.bin=.map} --dbgfile ${@:.bin=.dbg}
+
+80colreu.s: 80columns.s
+
+80colreu.s: 80columns.s
 
 %.o: %.s
-	ca65 -o $@ $<
+	ca65 -o $@ $< --debug --listing ${@:.o=.lst}
 
 .PHONY: clean
 clean:
-	rm -f *.prg *.bin *.o 80columns.d64
+	rm -f *.lst *.map *.prg *.bin *.o 80columns.d64
 
 .PHONY: toolchain
 toolchain: toolchain-cc65 toolchain-exomizer

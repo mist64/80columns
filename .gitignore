@@ -1,4 +1,8 @@
+*.bin
+*.d64
+*.dbg
+*.lst
+*.map
 *.o
 *.prg
-*.bin
 bin
