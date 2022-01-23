@@ -39,6 +39,5 @@ jobs:
       with:                                                                     
         files: |
           *.d64
-          *.prg
         fail_on_unmatched_files: true
         body: "Automatically created release"                                                                            
