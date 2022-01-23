@@ -41,14 +41,14 @@ charset%.bin: charset%.o charset.cfg
 
 .PHONY: update-font-images
 update-font-images: charset.bin charset2.bin charset3.bin charset4.bin mkfontimg.py
-	python mkfontimg.py -l charset.bin  img/t1.png
-	python mkfontimg.py    charset.bin  img/g1.png
-	python mkfontimg.py -l charset2.bin img/t2.png
-	python mkfontimg.py    charset2.bin img/g2.png
-	python mkfontimg.py -l charset3.bin img/t3.png
-	python mkfontimg.py    charset3.bin img/g3.png
-	python mkfontimg.py -l charset4.bin img/t4.png
-	python mkfontimg.py    charset4.bin img/g4.png
+	python3 mkfontimg.py -l charset.bin  img/t1.png
+	python3 mkfontimg.py    charset.bin  img/g1.png
+	python3 mkfontimg.py -l charset2.bin img/t2.png
+	python3 mkfontimg.py    charset2.bin img/g2.png
+	python3 mkfontimg.py -l charset3.bin img/t3.png
+	python3 mkfontimg.py    charset3.bin img/g3.png
+	python3 mkfontimg.py -l charset4.bin img/t4.png
+	python3 mkfontimg.py    charset4.bin img/g4.png
 
 .INTERMEDIATE: 80columns.bin
 80columns.bin: 80columns.o charset.o 80columns.cfg
