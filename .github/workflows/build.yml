@@ -18,10 +18,10 @@ jobs:
         submodules: true
 
     - name: install deps
-      run: sudo apt install vice
+      run: sudo apt install vice cc65
 
     - name: build toolchain
-      run: make toolchain -j$(nproc)
+      run: make toolchain-exomizer -j$(nproc)
 
     - name: build 80columns
       run: make -j$(nproc)
