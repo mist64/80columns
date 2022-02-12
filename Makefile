@@ -9,7 +9,7 @@ ifneq ($(shell which c1541 2>/dev/null),)
 all: 80columns.d64
 endif
 
-80columns.d64: 80colreu-compressed.prg 80columns-compressed.prg charset.prg charset2.prg charset3.prg charset4.prg
+80columns.d64: 80columns-compressed.prg 80colreu-compressed.prg charset.prg charset2.prg charset3.prg charset4.prg
 	rm -f $@
 	c1541 -format 80columns,80 d64 80columns.d64.tmp
 	for i in $^; do \
